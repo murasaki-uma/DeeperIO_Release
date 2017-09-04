@@ -61,7 +61,9 @@ module.exports = {
   // import 文で .ts ファイルを解決するため
   resolve: {
     extensions: [
-      '.ts', '.js', '.json', '.pug', '.styl'
+      '.ts', '.js', '.json', '.pug', '.styl',
+      path.join(__dirname, "js/helpers"),
+      "node_modules"
     ],
   },
   devServer: {
