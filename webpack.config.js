@@ -56,6 +56,14 @@ module.exports = {
           use: ["css-loader", "stylus-loader"]
         })
       },
+      {
+        test: /\.(jpg|png|gif)$/,
+        loader: ['url-loader']
+      },
+      {
+        test: /\.(glsl|vs|fs|frag|vert)$/,
+        loader: 'shader-loader'
+      }
     ]
   },
   // import 文で .ts ファイルを解決するため

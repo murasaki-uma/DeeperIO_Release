@@ -3,7 +3,7 @@ declare function require(x: string): any;
 import * as $ from 'jquery';
 import 'imports-loader?THREE=three!../../node_modules/three/examples/js/controls/OrbitControls'
 
-// console.log(OrbitControls);
+// console.log(THREE.OrbitControls);
 
 export default class VThree
 {
@@ -295,15 +295,7 @@ export default class VThree
 
     public debug()
     {
-        if(this.debugMode)
-        {
 
-
-            $('.dg').css('display','block');
-        } else
-        {
-            $('.dg').css('display','none');
-        }
     }
 
     public start()

@@ -1,8 +1,12 @@
-
+declare function require(x: string): any;
 // *********** ひとつめのシーン *********** //
 import GUI from "./GUI";
 import * as THREE from 'three';
 import VThree from "./VThree";
+const NoiseUvShader_Frag = require("./GLSL/NoiseUvShader.frag");
+const NoiseUvShader_Vert = require("./GLSL/NoiseUvShader.vert");
+const texture = require('./texture/pal01_opt02.png');
+
 export default class Scene01{
 
     public scene: THREE.Scene;
@@ -29,6 +33,7 @@ export default class Scene01{
     private image_noiseSpeed:number = 0.0;
     private vthree:VThree;
     private clearColor:number = 0.0;
+    private texture:any;
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
         this.renderer = renderer;
@@ -49,8 +54,10 @@ export default class Scene01{
         this.scene.add(new THREE.AmbientLight(0xffffff,1.0));
 
 
+        this.texture = new Image();
+        this.texture.src = texture;
         this.image_uniform = {
-            texture: { value: new THREE.TextureLoader().load("./Texture/pal01.png") },
+            texture: { value: THREE.ImageUtils.loadTexture( this.texture.src )},
             time: {value:0.0},
             noiseSeed:{value:0.1},
             noiseScale:{value:0.1},
@@ -66,8 +73,8 @@ export default class Scene01{
         // 緑のマテリアルを作成
         this.plane_material = new THREE.ShaderMaterial( {
             uniforms:       this.image_uniform,
-            vertexShader:   document.getElementById( 'imageVertexShader' ).textContent,
-            fragmentShader: document.getElementById( 'imageFragmentShader' ).textContent,
+            vertexShader:   NoiseUvShader_Vert,
+            fragmentShader: NoiseUvShader_Frag,
             side:THREE.DoubleSide
         });
         // 上記作成のジオメトリーとマテリアルを合わせてメッシュを生成

@@ -3,7 +3,7 @@ import GUIParameters from "./GUIParameters";
 export default class GUI
 {
     public gui:dat.GUI;
-    public parameters:GUIParameters;
+    public parameters:any;
     public rendering:any;
     public particle:any;
     public scene03:any;

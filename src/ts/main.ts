@@ -1,9 +1,12 @@
-
+declare function require(x: string): any;
+var css = require('../styl/main.styl');
 import * as THREE from 'three';
 import * as $ from 'jquery';
 import VThree from "./VThree";
 import Scene01 from './Scene01';
 import GUI from "./GUI";
+// var img = require('./texture/pal01_opt.png');
+// console.log(img);
 console.log(THREE);
 class Main
 {
