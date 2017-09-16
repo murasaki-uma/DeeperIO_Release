@@ -6,6 +6,8 @@ import VThree from "./VThree";
 const NoiseUvShader_Frag = require("./GLSL/NoiseUvShader.frag");
 const NoiseUvShader_Vert = require("./GLSL/NoiseUvShader.vert");
 const texture = require('./texture/pal01_opt02.png');
+const TimeLineMax = require('gsap/TimelineMax');
+const EASE = require('gsap/EasePack.js');
 
 export default class Scene01{
 
@@ -22,7 +24,7 @@ export default class Scene01{
     private composer:any;
     private isAnimationStart:boolean = false;
 
-    private startPlaneZ:number = -0.1;
+    private startPlaneZ:any ={value:0};
 
     private planeMoveSpeed = 0.05;
 
@@ -34,6 +36,7 @@ export default class Scene01{
     private vthree:VThree;
     private clearColor:number = 0.0;
     private texture:any;
+    private imageRotation:THREE.Vector3;
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
         this.renderer = renderer;
@@ -69,7 +72,7 @@ export default class Scene01{
         };
 
         // 立方体のジオメトリーを作成
-        this.plane_geometry = new THREE.PlaneGeometry( 1, window.innerHeight/window.innerWidth,100,100);
+        this.plane_geometry = new THREE.PlaneGeometry(this.vthree.getScreenWH().w,this.vthree.getScreenWH().h);
         // 緑のマテリアルを作成
         this.plane_material = new THREE.ShaderMaterial( {
             uniforms:       this.image_uniform,
@@ -79,14 +82,13 @@ export default class Scene01{
         });
         // 上記作成のジオメトリーとマテリアルを合わせてメッシュを生成
         this.plane = new THREE.Mesh( this.plane_geometry, this.plane_material );
+        // this.plane.position.z = 10;
         this.scene.add( this.plane );
 
         // カメラを作成
-        this.camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+        this.camera = new THREE.PerspectiveCamera( 90, this.vthree.getScreenWH().w/this.vthree.getScreenWH().h, 0.1, 1000 );
         // カメラ位置を設定
-        this.camera.position.z = 0;
-
-
+        this.camera.position.z = this.vthree.getScreenWH().h/2;
 
 
 
@@ -97,6 +99,7 @@ export default class Scene01{
         this.image_noiseSpeed = this.gui.parameters.image_speed;
         this.initPostProcessing();
 
+        this.reset();
     }
     public  initPostProcessing()
     {
@@ -187,9 +190,10 @@ export default class Scene01{
 
     public reset()
     {
+        this.imageRotation = new THREE.Vector3(0,0,0);
         this.isAnimationStart = false;
-        this.startPlaneZ = -0.1;
-        this.plane.position.set(0,0,-0.1);
+        this.startPlaneZ.value = 0;
+        this.plane.position.set(0,0,0);
         this.plane.rotation.setFromVector3(new THREE.Vector3(0,0,0));
         this.renderer.setClearColor(0x000000);
         this.image_noiseSeed = this.gui.parameters.image_noiseSeed;
@@ -198,6 +202,8 @@ export default class Scene01{
         this.planeMoveSpeed = 0.05;
         this.planeRotateSpeed = 0.02;
         this.clearColor = 0.0;
+        this.image_uniform.noiseScale.value = this.image_noiseScale;
+        this.image_uniform.noiseSeed.value = this.image_noiseSeed;
     }
 
     // ******************************************************
@@ -212,6 +218,17 @@ export default class Scene01{
         if(e.key == "s")
         {
             this.isAnimationStart = !this.isAnimationStart;
+            let anim = new TimeLineMax({delay:0.0,ease:EASE.Power2.easeOut}).to(this.startPlaneZ,this.gui.parameters.translateDulation,{value:this.gui.parameters.image_translatedZ});
+            let anim02 = new TimeLineMax({delay:0.5,ease:EASE.Expo.easeOut}).to(this.imageRotation,this.gui.parameters.rotationDulation,{
+                x:this.gui.parameters.image_rotationX,
+                y:this.gui.parameters.image_rotationY,
+                z:this.gui.parameters.image_rotationZ,
+            });
+            // this.image_uniform.noiseScale.valu
+            // this.image_uniform.noiseSeed.value
+            let tween_noiseSpeed = new TimeLineMax({delay:0.0,ease:EASE.Expo.easeOut}).to(this.image_uniform.noiseScale,this.gui.parameters.translateDulation*6.0,{value:0.04});
+
+            let tween_noiseSeed = new TimeLineMax({delay:0.0,ease:EASE.Expo.easeOut}).to(this.image_uniform.noiseSeed,this.gui.parameters.translateDulation*6.0,{value:0.001});
         }
 
         if(e.key =="r")
@@ -249,47 +266,47 @@ export default class Scene01{
         {
 
 
-            if(this.planeMoveSpeed >= 0.0005)
-            {
+            // if(this.planeMoveSpeed >= 0.0005)
+            // {
+            //
+            //     this.planeMoveSpeed += (0.0004 - this.planeMoveSpeed) * 0.1;
+            // }
+            // // this.gui.parameters.image_positionZ -= this.planeMoveSpeed;
+            // this.startPlaneZ -= this.planeMoveSpeed;
 
-                this.planeMoveSpeed += (0.0004 - this.planeMoveSpeed) * 0.1;
-            }
-            // this.gui.parameters.image_positionZ -= this.planeMoveSpeed;
-            this.startPlaneZ -= this.planeMoveSpeed;
-
-            if(this.planeMoveSpeed <= 0.015)
-            {
-                this.clearColor += (1.0 - this.clearColor) * 0.0015;
-                let c = new THREE.Color(this.clearColor,this.clearColor,this.clearColor);
-                this.renderer.setClearColor(c);
-
-
-                this.planeRotateSpeed +=(0.0 - this.planeRotateSpeed) * 0.1;
-                this.plane.rotateX(-this.planeRotateSpeed);
-                this.plane.rotateY(-this.planeRotateSpeed/2);
-                this.plane.rotateZ(this.planeRotateSpeed/3);
-            }
-
-            if(this.planeMoveSpeed <= 0.001)
-            {
-                this.image_noiseSeed +=(0.01 - this.image_noiseSeed ) * 0.005;
-                this.image_noiseScale +=(0.01 - this.image_noiseScale ) * 0.005;
-                this.image_noiseSpeed +=(0.01 - this.image_noiseSpeed ) * 0.005;
-            }
+            // if(this.planeMoveSpeed <= 0.015)
+            // {
+            //     this.clearColor += (1.0 - this.clearColor) * 0.0015;
+            //     let c = new THREE.Color(this.clearColor,this.clearColor,this.clearColor);
+            //     this.renderer.setClearColor(c);
+            //
+            //
+            //     this.planeRotateSpeed +=(0.0 - this.planeRotateSpeed) * 0.1;
+            //     this.plane.rotateX(-this.planeRotateSpeed);
+            //     this.plane.rotateY(-this.planeRotateSpeed/2);
+            //     this.plane.rotateZ(this.planeRotateSpeed/3);
+            // }
+            //
+            // if(this.planeMoveSpeed <= 0.001)
+            // {
+            //     this.image_noiseSeed +=(0.01 - this.image_noiseSeed ) * 0.005;
+            //     this.image_noiseScale +=(0.01 - this.image_noiseScale ) * 0.005;
+            //     this.image_noiseSpeed +=(0.01 - this.image_noiseSpeed ) * 0.005;
+            // }
 
 
         }
 
-        this.image_uniform.noiseScale.value = this.image_noiseScale;
-        this.image_uniform.noiseSeed.value = this.image_noiseSeed;
+        // this.image_uniform.noiseScale.value = this.image_noiseScale;
+        // this.image_uniform.noiseSeed.value = this.image_noiseSeed;
         this.image_uniform.time.value += this.image_noiseSpeed;
 
 
 
-        this.image_uniform.noiseScale_vertex.value = this.gui.parameters.image_noiseScale_vertex;
-            this.image_uniform.noiseSeed_vertex.value = this.gui.parameters.image_noiseSeed_vertex;
-            this.image_uniform.time_scale_vertex.value = this.gui.parameters.image_speed_scale__vertex;
-            this.image_uniform.distance_threshold.value = this.gui.parameters.image_distance_threshold;
+        // this.image_uniform.noiseScale_vertex.value = this.gui.parameters.image_noiseScale_vertex;
+        //     this.image_uniform.noiseSeed_vertex.value = this.gui.parameters.image_noiseSeed_vertex;
+        //     this.image_uniform.time_scale_vertex.value = this.gui.parameters.image_speed_scale__vertex;
+        //     this.image_uniform.distance_threshold.value = this.gui.parameters.image_distance_threshold;
         // }
 
 
@@ -297,9 +314,11 @@ export default class Scene01{
         this.plane.position.set (
             this.gui.parameters.image_positionX,
             this.gui.parameters.image_positionY,
-            //this.gui.parameters.image_positionZ,
-            this.startPlaneZ
+            // this.gui.parameters.image_positionZ,
+            this.startPlaneZ.value
         );
+
+        this.plane.rotation.setFromVector3(this.imageRotation);
 
 
         // this.composer.render();

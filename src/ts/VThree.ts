@@ -2,7 +2,7 @@ import * as THREE from 'three';
 declare function require(x: string): any;
 import * as $ from 'jquery';
 import 'imports-loader?THREE=three!../../node_modules/three/examples/js/controls/OrbitControls'
-
+const Stats = require('stats-js');
 // console.log(THREE.OrbitControls);
 
 export default class VThree
@@ -35,6 +35,9 @@ export default class VThree
     public oscValue:any[] = [];
 
     public rendertarget:THREE.WebGLRenderTarget = null;
+
+    public screenWidth:number = 0;
+    public screenHeight:number = 0;
     constructor(config?:any)
     {
 
@@ -79,8 +82,10 @@ export default class VThree
 
         // Rendererを作る
         this.renderer = new THREE.WebGLRenderer({antialias: true, alpha:true});
-        this.renderer.setPixelRatio( window.devicePixelRatio );
-        this.renderer.setSize( window.innerWidth, window.innerHeight );
+        // this.renderer.setPixelRatio( window.devicePixelRatio );
+        this.screenWidth = window.innerWidth;
+        this.screenHeight = this.screenWidth/2.0;
+        this.renderer.setSize( this.screenWidth, this.screenHeight );
         this.renderer.sortObjects = false;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.BasicShadowMap;
@@ -90,8 +95,8 @@ export default class VThree
         document.body.appendChild( this.renderer.domElement );
 
         this.updateCanvasAlpha();
-        // this.stats = new Stats();
-        // document.body.appendChild(this.stats.domElement);
+        this.stats = new Stats();
+        document.body.appendChild(this.stats.domElement);
 
 
         this.debug();
@@ -105,7 +110,8 @@ export default class VThree
 
         this.scenes.push(scene);
         this.cameras.push(scene.camera);
-      ;
+
+
 
 
     }
@@ -115,15 +121,16 @@ export default class VThree
         this.scenes[this.NUM].onMouseDown(e);
     }
 
-
     // ウィンドウの幅が変わったときの処理
     public onWindowResize = () =>
     {
         var windowHalfX = window.innerWidth / 2;
         var windowHalfY = window.innerHeight / 2;
-        this.scenes[this.NUM].camera.aspect = window.innerWidth / window.innerHeight;
+        this.scenes[this.NUM].camera.aspect = window.innerWidth / window.innerWidth/2;
         this.scenes[this.NUM].camera.updateProjectionMatrix();
-        this.renderer.setSize( window.innerWidth, window.innerHeight );
+        this.screenWidth = window.innerWidth;
+        this.screenHeight = this.screenWidth/2;
+        this.renderer.setSize( this.screenWidth, this.screenHeight );
 
         console.log("resize");
     }
@@ -151,6 +158,10 @@ export default class VThree
     public onKeyUp = (e:KeyboardEvent) => {
         this.scenes[this.NUM].keyUp(e);
     }
+    public getScreenWH()
+    {
+        return {w:this.screenWidth,h:this.screenHeight};
+    }
 
 
     public nextScene()
@@ -164,8 +175,10 @@ export default class VThree
         try {
             this.scenes[this.NUM].mouseMove(e);
         }
+        catch (e) {
+            console.log(e); // 例外オブジェクトをエラー処理部分に渡す
+        }
     }
-
 
     public onKeyDown = (e:KeyboardEvent) => {
 
@@ -243,6 +256,9 @@ export default class VThree
             }
 
         }
+        catch (e) {
+            console.log(e) // 例外オブジェクトをエラー処理部分に渡す
+        }
 
     }
 
@@ -308,7 +324,7 @@ export default class VThree
     public draw(time?) {
 
 
-        // this.stats.update(time);
+        this.stats.update(time);
         this.scenes[this.NUM].update(time,this.isUpdate);
 
         if(this.rendertarget === null)
