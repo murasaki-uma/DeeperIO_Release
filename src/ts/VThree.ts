@@ -38,6 +38,7 @@ export default class VThree
 
     public screenWidth:number = 0;
     public screenHeight:number = 0;
+    public maxWidth:number = 960;
     constructor(config?:any)
     {
 
@@ -82,10 +83,12 @@ export default class VThree
 
         // Rendererを作る
         this.renderer = new THREE.WebGLRenderer({antialias: true, alpha:true});
-        // this.renderer.setPixelRatio( window.devicePixelRatio );
-        this.screenWidth = window.innerWidth;
-        this.screenHeight = this.screenWidth/2.0;
-        this.renderer.setSize( this.screenWidth, this.screenHeight );
+        this.renderer.setPixelRatio(1);
+        this.computeScreenSize();
+        // this.onWindowResize();
+        // this.screenWidth = window.innerWidth;
+        // this.screenHeight = this.screenWidth/2.0;
+        // this.renderer.setSize( this.screenWidth, this.screenHeight );
         this.renderer.sortObjects = false;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.BasicShadowMap;
@@ -100,6 +103,9 @@ export default class VThree
 
 
         this.debug();
+
+        $('#main').css("width","100%");
+        $('#main').css("height",(window.innerWidth/2) + "px");
 
     }
 
@@ -121,17 +127,31 @@ export default class VThree
         this.scenes[this.NUM].onMouseDown(e);
     }
 
+    public computeScreenSize()
+    {
+        let w = window.innerWidth;
+        if(w > this.maxWidth)
+        {
+            w = this.maxWidth;
+        }
+
+        this.screenWidth = w;
+        this.screenHeight = this.screenWidth/2;
+        this.renderer.setSize( this.screenWidth, this.screenHeight );
+        $('#main').css("width","100%");
+        $('#main').css("height",(window.innerWidth/2) + "px");
+    }
+
     // ウィンドウの幅が変わったときの処理
     public onWindowResize = () =>
     {
         var windowHalfX = window.innerWidth / 2;
         var windowHalfY = window.innerHeight / 2;
-        this.scenes[this.NUM].camera.aspect = window.innerWidth / window.innerWidth/2;
-        this.scenes[this.NUM].camera.updateProjectionMatrix();
-        this.screenWidth = window.innerWidth;
-        this.screenHeight = this.screenWidth/2;
-        this.renderer.setSize( this.screenWidth, this.screenHeight );
+        // this.scenes[this.NUM].camera.aspect = window.innerWidth / window.innerWidth/2;
+        // this.scenes[this.NUM].camera.updateProjectionMatrix();
+        this.computeScreenSize();
 
+        this.scenes[this.NUM].windowResize();
         console.log("resize");
     }
 
@@ -329,12 +349,21 @@ export default class VThree
 
         if(this.rendertarget === null)
         {
-            this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera);
+            if(!this.scenes[this.NUM].isPostProcessing) {
+                this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera);
+            }
         }
         else
         {
-            this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera,this.rendertarget);
+            if(!this.scenes[this.NUM].isPostProcessing)
+            {
+                this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera,this.rendertarget);
+            }
+
+
         }
+
+
 
 
         if(this.isUpdate)

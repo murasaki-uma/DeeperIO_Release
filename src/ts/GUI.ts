@@ -57,13 +57,14 @@ export default class GUI
         // this.image.add(this.parameters,"image_positionY",-30.0,30.0);
         // this.image.add(this.parameters,"image_positionZ",-500.0,100.0);
         // this.image.add(this.parameters,"imagePos");
-        this.image.add(this.parameters,"image_rotationX",-0.3,0.300);
-        this.image.add(this.parameters,"image_rotationY",-0.30,0.300);
-        this.image.add(this.parameters,"image_rotationZ",-0.1,0.100);
-        this.image.add(this.parameters,"image_translatedZ",-300,0);
+        this.image.add(this.parameters,"image_rotationX",-1.0,1.0);
+        this.image.add(this.parameters,"image_rotationY",-1.0,1.0);
+        this.image.add(this.parameters,"image_rotationZ",-0.100,0.100);
+        this.image.add(this.parameters,"image_translatedZ",-1000,0);
 
         this.image.add(this.parameters,"rotationDulation",0.0,5.0);
         this.image.add(this.parameters,"translateDulation",0.0,5.0);
+        this.image.add(this.parameters,"colorDulation",0.0,10.0);
 
         this.parking.add(this.parameters, "parking_vGlitchArea", 0.0,10.0);
         this.pal.add(this.parameters,"pal_position_x", -5.0,5.0);

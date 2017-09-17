@@ -23,13 +23,14 @@ export default class GUIParameters
     public image_positionX:number = 0.0;
     public image_positionY:number = 0.0;
     public image_positionZ:number = 0.0;
-    public image_rotationX:number = -0.150;
-    public image_rotationY:number = -0.080;
+    public image_rotationX:number = -0.4000;
+    public image_rotationY:number = -0.2600;
     public image_rotationZ:number = 0.00001;
-    public image_translatedZ:number = -178.0;
+    public image_translatedZ:number = -350.0;
 
     public rotationDulation:number = 1.4;
-    public translateDulation:number = 0.9;
+    public translateDulation:number = 2.0;
+    public colorDulation:number = 6.0;
 
     public parking_vGlitchArea = 0.001;
 
