@@ -116,6 +116,7 @@ export default class VThree
 
         this.scenes.push(scene);
         this.cameras.push(scene.camera);
+        // this.scenes[this.scenes.length-1].update();
 
 
 

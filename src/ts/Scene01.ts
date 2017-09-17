@@ -25,6 +25,7 @@ console.log(TweenLite);
 
 export default class Scene01{
 
+    public name:string = "scene1";
     public scene: THREE.Scene;
     public camera: THREE.PerspectiveCamera;
     private renderer:THREE.WebGLRenderer;
@@ -127,68 +128,20 @@ export default class Scene01{
     }
     public  initPostProcessing()
     {
-        // var shaderBleach = THREE.BleachBypassShader;
-        // var shaderSepia = THREE.SepiaShader;
-        // var shaderVignette = THREE.VignetteShader;
-        // var shaderCopy = THREE.CopyShader;
 
-
-        // var shaderBleach = THREE.BleachBypassShader;
-        // var shaderSepia = THREE.SepiaShader;
         var shaderVignette = THREE.VignetteShader;
         var shaderCopy = THREE.CopyShader;
-        // var effectBleach = new THREE.ShaderPass( shaderBleach );
-        // var effectSepia = new THREE.ShaderPass( shaderSepia );
         var effectVignette = new THREE.ShaderPass( shaderVignette );
         var effectCopy = new THREE.ShaderPass( shaderCopy );
-        // effectBleach.uniforms[ "opacity" ].value = 0.05;
-        // effectSepia.uniforms[ "amount" ].value = 0.9;
         effectVignette.uniforms[ "offset" ].value = 0.95;
         effectVignette.uniforms[ "darkness" ].value = 1.6;
 
 
-        // var effectBloom = new THREE.BloomPass( 2.2);
-        // var effectFilm = new THREE.FilmPass( 0.35, 0.025, 1024, false );
-        // var effectFilmBW = new THREE.FilmPass( 0.35, 0.5, 2048, true );
         effectVignette.renderToScreen = true;
-        // effectBleach.renderToScreen = true;
-        // var effectDotScreen = new THREE.DotScreenPass( new THREE.Vector2( 0, 0 ), 0.5, 0.8 );
-
-
-        // effectFilm.renderToScreen = true;
-        // effectFilmBW.renderToScreen = true;
-
-
-        // var effectHBlur = new THREE.ShaderPass( THREE.HorizontalBlurShader );
-        // var effectVBlur = new THREE.ShaderPass( THREE.VerticalBlurShader );
-        // effectHBlur.uniforms[ 'h' ].value = 4 / ( window.innerWidth / 2 );
-        // effectVBlur.uniforms[ 'v' ].value = 4 / ( window.innerHeight / 2 );
-        // var effectColorify1 = new THREE.ShaderPass( THREE.ColorifyShader );
-        // var effectColorify2 = new THREE.ShaderPass( THREE.ColorifyShader );
-        // effectColorify1.uniforms[ 'color' ] = new THREE.Uniform( new THREE.Color( 1, 0.8, 0.8 ) );
-        // effectColorify2.uniforms[ 'color' ] = new THREE.Uniform( new THREE.Color( 1, 0.75, 0.5 ) );
-        // var clearMask = new THREE.ClearMaskPass();
-        // var renderMask = new THREE.MaskPass( this.scene, this.camera );
-        // var renderMaskInverse = new THREE.MaskPass( this.scene, this.camera );
-        // renderMaskInverse.inverse = true;
         this.composer = new THREE.EffectComposer( this.renderer );
         this.composer.addPass( new THREE.RenderPass( this.scene, this.camera ) );
-        // let renderScene = new THREE.TexturePass( this.composer.renderTarget2.texture );
-        //
-        // var effectRGB = new THREE.ShaderPass( THREE.RGBShiftShader );
-        // effectRGB.uniforms[ 'amount' ].value = 0.001;
-        // effectRGB.renderToScreen = true;
-
-
-        // this.composer.addPass( effectFilm   );
-        // this.composer.addPass( effectBleach   );
         this.composer.addPass( effectVignette    );
 
-
-        // this.composer.addPass( renderMaskInverse  );
-        // this.composer.addPass( effectHBlur  );
-        // this.composer.addPass( effectVBlur  );
-        // this.composer.addPass( clearMask     );
         this.isPostProcessing = true;
     }
 
@@ -260,6 +213,16 @@ export default class Scene01{
             this.reset();
         }
 
+
+        if(e.key == "0")
+        {
+            this.vthree.scenes[1].update();
+        }
+        if(e.key == "1")
+        {
+            this.vthree.scenes[1].shaderReplace();
+        }
+
     }
 
     // ******************************************************
@@ -289,6 +252,8 @@ export default class Scene01{
 
         if(this.isAnimationStart)
         {
+
+
 
             if(this.isTweenStart)
             {
