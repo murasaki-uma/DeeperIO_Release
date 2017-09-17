@@ -64,6 +64,10 @@ module.exports = {
       {
         test: /\.(glsl|vs|fs|frag|vert)$/,
         loader: 'shader-loader'
+      },
+      {
+        test: /\.json$/,
+        loader: 'json-loader'
       }
     ]
   },

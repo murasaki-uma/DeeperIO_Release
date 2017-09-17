@@ -9,7 +9,7 @@ const ComputePosition = require('./GLSL/ComputePosition_Pal.frag');
 const ComputeVelocity = require('./GLSL/ComputeVelocity_Pal.frag');
 const vert = require('./GLSL/Pal.vert');
 const frag = require('./GLSL/Pal.frag');
-
+const pal_json = require('./models/pal/pal_decimated.json');
 
 import 'imports-loader?THREE=three!three/examples/js/shaders/VignetteShader'
 import 'imports-loader?THREE=three!three/examples/js/shaders/CopyShader'
@@ -130,8 +130,9 @@ export default class Scene02{
 
         let loader = new THREE.JSONLoader();
 
-        loader.load( 'models/pal/pal_decimated.json', ( geometry, materials )=> { //第１引数はジオメトリー、第２引数はマテリアルが自動的に取得）
-            var faceMaterial = new THREE.MultiMaterial( materials );
+        loader.load( pal_json, ( geometry, materials )=> { //第１引数はジオメトリー、第２引数はマテリアルが自動的に取得）
+
+        var faceMaterial = new THREE.MultiMaterial( materials );
             let mesh = new THREE.Mesh( geometry, faceMaterial );
             this.pal = mesh;
             // mesh.position.set(-1,0.5,0);
