@@ -58,6 +58,7 @@ export default class Scene01{
     public counter:number = 0;
     public translatedZ:number=0;
     public isPlaneConstantMove:boolean = false;
+    private effectFilm:any;
 
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
@@ -130,16 +131,35 @@ export default class Scene01{
     {
 
         var shaderVignette = THREE.VignetteShader;
+        var shaderBleach = THREE.BleachBypassShader;
+        let film = THREE.FilmShader;
+        film.uniforms = {
+
+            "tDiffuse":   { value: null },
+            "time":       { value: 0.0 },
+            "nIntensity": { value: 0.4 },
+            "sIntensity": { value: 0.06 },
+            "sCount":     { value: 4096/2 },
+            "grayscale":  { value: 0 }
+
+        };
+
+        let ConvolutionShader = THREE.ConvolutionShader;
+
         var shaderCopy = THREE.CopyShader;
         var effectVignette = new THREE.ShaderPass( shaderVignette );
         var effectCopy = new THREE.ShaderPass( shaderCopy );
         effectVignette.uniforms[ "offset" ].value = 0.95;
         effectVignette.uniforms[ "darkness" ].value = 1.6;
-
-
+        // var effectBloom = new THREE.ShaderPass( ConvolutionShader );
+        this.effectFilm = new THREE.ShaderPass(film );
+        var effectBleach = new THREE.ShaderPass( shaderBleach );
         effectVignette.renderToScreen = true;
         this.composer = new THREE.EffectComposer( this.renderer );
         this.composer.addPass( new THREE.RenderPass( this.scene, this.camera ) );
+        // this.composer.addPass( effectBloom );
+        this.composer.addPass( this.effectFilm );
+        this.composer.addPass( effectBleach );
         this.composer.addPass( effectVignette    );
 
         this.isPostProcessing = true;
@@ -236,6 +256,7 @@ export default class Scene01{
     public update(time)
     {
         this.counter++;
+        this.effectFilm.uniforms.time += 0.01;
         if(this.vthree.oscValue.length > 0)
         {
 

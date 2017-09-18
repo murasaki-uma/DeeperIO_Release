@@ -9,15 +9,9 @@ const ComputePosition = require('./GLSL/ComputePosition_Pal.frag');
 const ComputeVelocity = require('./GLSL/ComputeVelocity_Pal.frag');
 const vert = require('./GLSL/Pal.vert');
 const frag = require('./GLSL/Pal.frag');
-const pal_json = require('./models/pal/pal_decimated.json');
+// const pal_json = require('./models/pal/pal_decimated.json');
 
-import 'imports-loader?THREE=three!three/examples/js/shaders/VignetteShader'
-import 'imports-loader?THREE=three!three/examples/js/shaders/CopyShader'
-import 'imports-loader?THREE=three!three/examples/js/postprocessing/EffectComposer'
-import 'imports-loader?THREE=three!three/examples/js/postprocessing/RenderPass'
-import 'imports-loader?THREE=three!three/examples/js/shaders/ConvolutionShader'
-import 'imports-loader?THREE=three!three/examples/js/shaders/BleachBypassShader'
-import 'imports-loader?THREE=three!three/examples/js/shaders/FilmShader'
+
 
 
 // *********** ひとつめのシーン *********** //
@@ -79,6 +73,8 @@ export default class Scene02{
     private composer:THREE.EffectComposer;
     private isPostProcessing:boolean = false;
 
+    private effectFilm:any;
+
 
 
     // ******************************************************
@@ -130,7 +126,7 @@ export default class Scene02{
 
         let loader = new THREE.JSONLoader();
 
-        loader.load( pal_json, ( geometry, materials )=> { //第１引数はジオメトリー、第２引数はマテリアルが自動的に取得）
+        loader.load( "models/pal/pal_decimated.json", ( geometry, materials )=> { //第１引数はジオメトリー、第２引数はマテリアルが自動的に取得）
 
         var faceMaterial = new THREE.MultiMaterial( materials );
             let mesh = new THREE.Mesh( geometry, faceMaterial );
@@ -260,6 +256,14 @@ export default class Scene02{
         var shaderVignette = THREE.VignetteShader;
         var shaderBleach = THREE.BleachBypassShader;
         let film = THREE.FilmShader;
+        let tiltshift = THREE.VerticalTiltShiftShader;
+        tiltshift.uniforms = {
+
+            "tDiffuse": { value: null },
+            "v":        { value: 1.0 / 512.0 },
+            "r":        { value: 0.45 }
+
+        },
         film.uniforms = {
 
         "tDiffuse":   { value: null },
@@ -276,17 +280,23 @@ export default class Scene02{
         var shaderCopy = THREE.CopyShader;
         var effectVignette = new THREE.ShaderPass( shaderVignette );
         var effectCopy = new THREE.ShaderPass( shaderCopy );
-        effectVignette.uniforms[ "offset" ].value = 0.95;
-        effectVignette.uniforms[ "darkness" ].value = 1.6;
+        effectVignette.uniforms[ "offset" ].value = 0.75;
+        effectVignette.uniforms[ "darkness" ].value = 1.2;
         // var effectBloom = new THREE.ShaderPass( ConvolutionShader );
-        var effectFilm = new THREE.ShaderPass(film );
+        this.effectFilm = new THREE.ShaderPass(film );
+        var effectTiltshift = new THREE.ShaderPass(tiltshift );
         var effectBleach = new THREE.ShaderPass( shaderBleach );
         effectVignette.renderToScreen = true;
         this.composer = new THREE.EffectComposer( this.renderer );
         this.composer.addPass( new THREE.RenderPass( this.scene, this.camera ) );
         // this.composer.addPass( effectBloom );
-        this.composer.addPass( effectFilm );
+
+
+
+
+        this.composer.addPass( this.effectFilm );
         this.composer.addPass( effectBleach );
+        this.composer.addPass( effectTiltshift );
         this.composer.addPass( effectVignette    );
 
         this.isPostProcessing = true;
@@ -444,6 +454,7 @@ export default class Scene02{
         if(this.isUpdate)
         {
 
+            this.effectFilm.uniforms.time.value += 0.1;
             if(this.vthree.oscValue[1] == 0)
             {
                 this.reset()

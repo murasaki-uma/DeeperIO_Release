@@ -2,6 +2,16 @@ declare function require(x: string): any;
 var css = require('../styl/main.styl');
 import * as THREE from 'three';
 import * as $ from 'jquery';
+
+import 'imports-loader?THREE=three!three/examples/js/shaders/VignetteShader'
+import 'imports-loader?THREE=three!three/examples/js/shaders/CopyShader'
+import 'imports-loader?THREE=three!three/examples/js/postprocessing/EffectComposer'
+import 'imports-loader?THREE=three!three/examples/js/postprocessing/RenderPass'
+import 'imports-loader?THREE=three!three/examples/js/shaders/ConvolutionShader'
+import 'imports-loader?THREE=three!three/examples/js/shaders/BleachBypassShader'
+import 'imports-loader?THREE=three!three/examples/js/shaders/FilmShader'
+import 'imports-loader?THREE=three!three/examples/js/shaders/VerticalTiltShiftShader'
+
 import VThree from "./VThree";
 import Scene01 from './Scene01';
 import Scene02 from './Scene02';
