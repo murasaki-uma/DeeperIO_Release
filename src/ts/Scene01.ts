@@ -84,7 +84,7 @@ export default class Scene01{
         this.texture = new Image();
         this.texture.src = texture;
         this.image_uniform = {
-            texture: { value: THREE.ImageUtils.loadTexture( this.texture.src )},
+            texture: { value:  new THREE.TextureLoader().load( this.texture.src )},
             time: {value:0.0},
             noiseSeed:{value:0.1},
             noiseScale:{value:0.1},
@@ -113,6 +113,7 @@ export default class Scene01{
         this.camera = new THREE.PerspectiveCamera( 90, this.vthree.getScreenWH().w/this.vthree.getScreenWH().h, 0.1, 10000 );
         // カメラ位置を設定
         this.camera.position.z = this.vthree.getScreenWH().h/2;
+
 
 
         this.clearColor = new THREE.Color("rgb(0,0,0)");

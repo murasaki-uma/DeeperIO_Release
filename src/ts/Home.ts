@@ -6,6 +6,7 @@ import GUI from "./GUI";
 import * as THREE from 'three';
 const vert = require('./GLSL/Home.vert');
 const frag = require('./GLSL/Home.frag');
+const logo = require('./texture/logo.jpg');
 import VThree from "./VThree";
 // *********** ひとつめのシーン *********** //
 
@@ -23,7 +24,7 @@ export default class Home{
     private width:number=0
     private uniforms:any;
     private height:number = 0;
-
+    private texture:any;
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
         this.renderer = renderer;
@@ -62,20 +63,42 @@ export default class Home{
         // this.camera.position.y = 400;
 
 
+        this.texture = new Image();
+        this.texture.src = logo;
+
         this.uniforms = {
+            texture: { value: new THREE.TextureLoader().load( this.texture.src )},
             u_time: {value:0.0},
+            noiseSeed:{value:0.1},
+            noiseScale:{value:0.1},
+            time_scale_vertex: {value:0.0},
+            noiseSeed_vertex:{value:0.1},
+            noiseScale_vertex:{value:0.1},
+            distance_threshold:{value:0.3},
+            display:{value:true}
         };
-        let planegeo = new THREE.PlaneGeometry(this.width
-            ,this.height);
+
+        // 立方体のジオメトリーを作成
+        let geometry = new THREE.PlaneGeometry(this.width,this.height);
+        // 緑のマテリアルを作成
         let mat = new THREE.ShaderMaterial( {
             uniforms:       this.uniforms,
             vertexShader:   vert,
             fragmentShader: frag,
+            side:THREE.DoubleSide
         });
+        //
 
-        let mesh = new THREE.Mesh(planegeo,mat);
+        let mesh = new THREE.Mesh(geometry,mat);
         mesh.position.z = -1;
         this.scene.add(mesh);
+
+
+        // let p = new THREE.PlaneGeometry(500,250);
+        // let m = new THREE.MeshBasicMaterial({color:0xffffff,map:new THREE.TextureLoader().load( this.texture.src )});
+        // let _mesh = new THREE.Mesh(p,m);
+        // _mesh.position.z = -1;
+        // this.scene.add(_mesh);
 
         //
         // var geometry = new THREE.BoxGeometry( 50, 50, 50 );

@@ -7,6 +7,7 @@ uniform float u_time;
 
 varying vec2 vUv;
 varying vec3 vPos;
+uniform sampler2D texture;
 // Based on the example from
 // https://www.shadertoy.com/view/Ml3SRf
 
@@ -52,10 +53,12 @@ float fbm ( in vec2 _st) {
 
 void main() {
     vec2 st = vUv;
-   vec3 color = vec3(0.);
+
+    vec3 color = vec3(0.);
     vec2 a = vec2(0.);
     vec2 b = vec2(0.);
     vec2 c = vec2(60.,800.);
+
 
      a.x = fbm( st);
     a.y = fbm( st + vec2(1.0));
@@ -70,9 +73,17 @@ void main() {
 
     color = mix(vec3(0.861,0.522,0.990), vec3(0.134,0.658,0.835), clamp((f*f),0.2, 1.0));
     color = mix(color, vec3(0.289,0.930,0.506), clamp(c.x,0.040, 0.208));
-
-    vec3 finalColor = vec3(f*color);
+    float nx = noise(vec2(st.x*18.0,st.y+u_time*0.1))*0.1-0.05;
+    float ny = noise(vec2(st.y*4.0,st.y+u_time*0.2))*0.1-0.05;
+    vec4 textureColor = texture2D(texture,vec2(st.x+nx, st.y-ny-0.2));
+    vec3 finalColor = vec3(f*1.5*color);
     // vec3 finalColor = vec3(st.y+f,f,st.x+f);
-
+//
+//    if(textureColor.a > 0.0)
+//    {
+        finalColor *= (textureColor.rgb + vec3(0.2,ny,0.2));
+//    }
     gl_FragColor = vec4(finalColor,1.0);
+
+
 }
