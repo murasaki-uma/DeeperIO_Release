@@ -82,6 +82,7 @@ module.exports = {
   devServer: {
     contentBase: path.resolve(__dirname, 'docs'),
     port: 3000,
+    host: "0.0.0.0"
   },
   // ソースマップを有効に
   devtool: 'source-map'

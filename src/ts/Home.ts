@@ -66,8 +66,12 @@ export default class Home{
         this.texture = new Image();
         this.texture.src = logo;
 
+        let tex = new THREE.Texture();
+        tex.needsUpdate = true;
+        tex.image = this.texture;
+
         this.uniforms = {
-            texture: { value: new THREE.TextureLoader().load( this.texture.src )},
+            texture: { value: tex},
             u_time: {value:0.0},
             noiseSeed:{value:0.1},
             noiseScale:{value:0.1},

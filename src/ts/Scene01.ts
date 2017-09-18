@@ -83,8 +83,11 @@ export default class Scene01{
 
         this.texture = new Image();
         this.texture.src = texture;
+        let tex = new THREE.Texture();
+        tex.needsUpdate = true;
+        tex.image = this.texture;
         this.image_uniform = {
-            texture: { value:  new THREE.TextureLoader().load( this.texture.src )},
+            texture: { value:  tex},
             time: {value:0.0},
             noiseSeed:{value:0.1},
             noiseScale:{value:0.1},

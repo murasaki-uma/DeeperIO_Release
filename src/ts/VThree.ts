@@ -38,7 +38,7 @@ export default class VThree
 
     public screenWidth:number = 0;
     public screenHeight:number = 0;
-    public maxWidth:number = 960;
+    public maxWidth:number = 640;
     constructor(config?:any)
     {
 
@@ -173,6 +173,12 @@ export default class VThree
 
     public  onClick = () => {
         this.scenes[this.NUM].click();
+
+        // this.screenWidth = this.maxWidth * ( Math.random()*1.0);
+        // this.screenHeight = this.screenWidth/2;
+        // this.renderer.setSize( this.screenWidth, this.screenHeight );
+
+
     }
     // ←→キーでシーン番号を足し引き
 
