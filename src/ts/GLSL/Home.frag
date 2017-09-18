@@ -81,7 +81,11 @@ void main() {
 //
 //    if(textureColor.a > 0.0)
 //    {
-        finalColor *= (textureColor.rgb + vec3(0.2,ny,0.2));
+    float _r = texture2D(texture,vec2(st.x+nx+0.08*(st.x-0.5), st.y-ny-0.2)).r;
+    float _g = texture2D(texture,vec2(st.x+nx+0.09*(st.x-0.5), st.y-ny-0.2)).g;
+    float _b = texture2D(texture,vec2(st.x+nx+0.1*(st.x-0.5), st.y-ny-0.2)).b;
+
+        finalColor *= (vec3(_r,_g,_b) + vec3(0.2,ny,0.2));
 //    }
     gl_FragColor = vec4(finalColor,1.0);
 
