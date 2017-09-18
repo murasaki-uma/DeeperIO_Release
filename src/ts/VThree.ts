@@ -46,7 +46,7 @@ export default class VThree
 
             console.log(config);
             this.debugMode = (config === undefined? false : config.debugMode);
-            this.transparent = true;
+            this.transparent = false;
 
 
 
