@@ -34,6 +34,13 @@ class Main
     {
         this.gui = new GUI();
         this.vthree = new VThree();
+        this.vthree.progress = {
+            "home":0,
+            "scene1":0,
+            "scene2":0,
+            "scene3":0
+
+        };
         this.home = new Home(this.vthree.renderer,this.gui,this.vthree);
         this.scene01 = new Scene01(this.vthree.renderer,this.gui,this.vthree);
         this.scene02 = new Scene02(this.vthree.renderer,this.gui,this.vthree);

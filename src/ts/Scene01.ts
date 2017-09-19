@@ -59,6 +59,7 @@ export default class Scene01{
     public translatedZ:number=0;
     public isPlaneConstantMove:boolean = false;
     private effectFilm:any;
+    public isShaderReplace:boolean = true;
 
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
@@ -75,6 +76,8 @@ export default class Scene01{
     private createScene()
     {
 
+
+        // this.vthree.progress.push({'scene1':0});
 
         this.scene = new THREE.Scene();
 
@@ -130,6 +133,8 @@ export default class Scene01{
         this.initPostProcessing();
 
         this.reset();
+
+        this.vthree.progress[this.name] = 100;
     }
     public  initPostProcessing()
     {
@@ -256,9 +261,15 @@ export default class Scene01{
 
     }
 
-    // ******************************************************
-    public update(time)
+    public Awake()
     {
+        this.update();
+        this.vthree.isFistUpdate[1] = true;
+    }
+    // ******************************************************
+    public update(time?:number)
+    {
+
         this.counter++;
         this.effectFilm.uniforms.time += 0.01;
         if(this.vthree.oscValue.length > 0)

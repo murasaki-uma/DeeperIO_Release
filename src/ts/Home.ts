@@ -12,6 +12,7 @@ import VThree from "./VThree";
 
 export default class Home{
 
+    public name:string = "home";
     public scene: THREE.Scene;
     public camera: THREE.OrthographicCamera;
     private renderer:THREE.WebGLRenderer;
@@ -25,6 +26,7 @@ export default class Home{
     private uniforms:any;
     private height:number = 0;
     private texture:any;
+    public isShaderReplace:boolean = true;
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
         this.renderer = renderer;
@@ -39,6 +41,7 @@ export default class Home{
     private createScene()
     {
 
+        // this.vthree.progress.push({"home":0});
         this.scene = new THREE.Scene();
 
         // 立方体のジオメトリーを作成
@@ -121,9 +124,15 @@ export default class Home{
         // }
 
 
-
+        this.vthree.progress[this.name] = 100;
     }
 
+
+    public Awake()
+    {
+        this.update();
+        this.vthree.isFistUpdate[0] = true;
+    }
 
 
     public replaceShader()
@@ -180,10 +189,13 @@ export default class Home{
     // ******************************************************
 
 
-    public update(time)
+    public update(time?:number)
     {
 
 
+
+
+        console.log("home:update");
         this.uniforms.u_time.value += 0.01;
 
         // this.cube.rotateY(0.01);

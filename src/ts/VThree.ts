@@ -39,6 +39,15 @@ export default class VThree
     public screenWidth:number = 0;
     public screenHeight:number = 0;
     public maxWidth:number = 640;
+
+    public progress:any;
+
+    public firstupdateDelayNum:number = 60;
+    public sceneFirtstUpdateDelay:number = 60;
+
+    public awakedNum:number = 0;
+    public isFistUpdate:boolean[] = [];
+    public isAllSceneAwaking:boolean = false;
     constructor(config?:any)
     {
 
@@ -114,6 +123,8 @@ export default class VThree
     public addScene(scene:any)
     {
 
+        // this.progress.push(0);
+        this.isFistUpdate.push(false);
         this.scenes.push(scene);
         this.cameras.push(scene.camera);
         // this.scenes[this.scenes.length-1].update();
@@ -169,6 +180,16 @@ export default class VThree
             this.NUM = 0;
         }
 
+        try
+        {
+           if(!this.scenes[this.NUM].isShaderReplace)
+           {
+               this.scenes[this.NUM].Awake();
+           }
+        }catch (e)
+        {
+            console.log(e);
+        }
     }
 
     public  onClick = () => {
@@ -347,39 +368,74 @@ export default class VThree
 
     }
 
+
+
+
+
+
     // 最終的な描写処理と、アニメーション関数をワンフレームごとに実行
     public draw(time?) {
 
+        if(!this.isAllSceneAwaking)
+        {
+            let count = 0;
+            for (let i = 0; i < this.scenes.length; i++) {
+
+                if (this.progress[this.scenes[i].name] == 100) {
+                    count++;
+                }
+
+                if(i == this.scenes.length-1)
+                {
+                    if(this.scenes.length == count)
+                    {
+                        this.isAllSceneAwaking = true;
+                    }
+                }
+            }
+
+
+        }
+        if(this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
+
+
+            this.sceneFirtstUpdateDelay--;
+            if(this.sceneFirtstUpdateDelay < 0)
+            {
+                this.nextScene();
+                this.sceneFirtstUpdateDelay = this.firstupdateDelayNum;
+                this.awakedNum++;
+            }
+        }
 
         this.stats.update(time);
-        this.scenes[this.NUM].update(time,this.isUpdate);
+        this.scenes[this.NUM].update(time, this.isUpdate);
 
-        if(this.rendertarget === null)
-        {
-            if(!this.scenes[this.NUM].isPostProcessing) {
+        if (this.rendertarget === null) {
+            if (!this.scenes[this.NUM].isPostProcessing) {
                 this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera);
             }
         }
-        else
-        {
-            if(!this.scenes[this.NUM].isPostProcessing)
-            {
-                this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera,this.rendertarget);
+        else {
+            if (!this.scenes[this.NUM].isPostProcessing) {
+                this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera, this.rendertarget);
             }
 
 
         }
 
+        //
+        // console.log("progress");
+        // console.log(this.progress);
 
 
-
-        if(this.isUpdate)
-        {
+        if (this.isUpdate) {
             requestAnimationFrame(this.draw.bind(this));
         }
 
 
         this.oscValue = [];
+
 
     }
 }

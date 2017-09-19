@@ -90,6 +90,8 @@ export default class Scene02{
     // ******************************************************
     private createScene() {
 
+
+        // this.vthree.progress.push({"scene2":0});
         this.scene = new THREE.Scene();
 
 
@@ -108,9 +110,11 @@ export default class Scene02{
         var onProgress =  (xhr)=> {
             if (xhr.lengthComputable) {
                 var percentComplete = xhr.loaded / xhr.total * 100;
+                this.vthree.progress[this.name] = Math.round(percentComplete)-1;
                 if(Math.round(percentComplete) == 100)
                 {
                     this.isUpdate = true;
+
                     // this.replaceShader_WireWave(this.pal,0,false);
 
                 }
@@ -136,6 +140,7 @@ export default class Scene02{
             console.log("pal");
             console.log(mesh);
             this.scene.add( mesh );
+            this.vthree.progress[this.name] += 1;
         }, onProgress,onError);
 
 
@@ -156,16 +161,40 @@ export default class Scene02{
 
     }
 
+    public Awake()
+    {
+
+
+        if(this.vthree.progress[this.name] == 100)
+        {
+
+            try{
+                this.update();
+                this.shaderReplace();
+            }
+            catch (e)
+            {
+                console.log(e);
+                this.vthree.isFistUpdate[2] = false;
+                return true;
+            }
+
+            this.vthree.isFistUpdate[2] = true;
+        }
+
+
+    }
+
     public shaderReplace()
     {
         // if(this.isShaderReplased)
         // {
-            this.replaceShader_WireWave(this.pal,0,false);
+            this.replaceShader_WireWave(this.pal,0,false,this.update);
         //     this.isShaderReplased = true;
         // }
 
     }
-    public replaceShader_WireWave=(object:any,isTransparent:number, isWire:boolean)=>
+    public replaceShader_WireWave=(object:any,isTransparent:number, isWire:boolean, callback: () => void)=>
     {
         if(!this.isShaderReplace)
         {
@@ -178,6 +207,8 @@ export default class Scene02{
             for (let i = 0; i < materials.length; i++) {
 
                 //let img = materials[i].map.image.src;//.attributes.currentSrc;
+
+
                 console.log(materials[i]);
                 console.log(materials[i].map);
 
@@ -212,8 +243,11 @@ export default class Scene02{
 
 
             return object;
-
+            callback();
+            this.isShaderReplace = true;
         }
+
+
     }
 
     public initComputeRenderer()
@@ -311,8 +345,9 @@ export default class Scene02{
 
     public click()
     {
-        this.replaceShader_WireWave(this.pal,0,false);
-        this.isShaderReplace = true;
+        // this.replaceShader_WireWave(this.pal,0,false);
+        this.Awake();
+
 
     }
 
@@ -323,8 +358,8 @@ export default class Scene02{
 
         if(e.key =="Space")
         {
-            this.replaceShader_WireWave(this.pal,0,false);
-            this.isShaderReplace = true;
+            // this.replaceShader_WireWave(this.pal,0,false);
+            // this.isShaderReplace = true;
         }
         if(e.key == "p")
         {
@@ -449,7 +484,7 @@ export default class Scene02{
     // ******************************************************
 
 
-    public update(time)
+    public update(time?:number)
     {
         if(this.isUpdate)
         {

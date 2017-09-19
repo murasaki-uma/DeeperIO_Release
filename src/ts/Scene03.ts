@@ -29,6 +29,7 @@ class WireBox{
 }
 export default class Scene03{
 
+    public name:string = "scene3";
     public scene: THREE.Scene;
     public camera: THREE.Camera;
     private renderer:THREE.WebGLRenderer;
@@ -54,6 +55,16 @@ export default class Scene03{
     private isDebug70:boolean = false;
     private isDebug71:boolean = false;
 
+    public isShaderReplace:boolean = false;
+
+    public parkingMesh:THREE.Mesh;
+
+
+
+    public onProgress:any;
+    public onError:any;
+    public loader:any;
+
 
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
@@ -69,6 +80,8 @@ export default class Scene03{
     private createScene()
     {
 
+
+        // this.vthree.progress.push({"scene3":0});
         let x,y,z;
         let _r = Math.random();
         if(_r < 1.0)
@@ -120,9 +133,10 @@ export default class Scene03{
 
 
 
-        var onProgress =  (xhr)=> {
+        this.onProgress =  (xhr)=> {
             if (xhr.lengthComputable) {
                 var percentComplete = xhr.loaded / xhr.total * 100;
+                this.vthree.progress[this.name] = Math.round(percentComplete)-1;
                 if(Math.round(percentComplete) == 100)
                 {
                     // this.isUpdate = true;
@@ -132,20 +146,21 @@ export default class Scene03{
                 console.log(Math.round(percentComplete) + '% downloaded');
             }
         };
-        var onError = function (xhr) {
+        this.onError = function (xhr) {
         };
-        let loader = new THREE.JSONLoader();
+        this.loader = new THREE.JSONLoader();
 
-        loader.load( './models/parking/parking.json', ( geometry, materials )=> {
+        this.loader.load( './models/parking/parking.json', ( geometry, materials )=> {
             var faceMaterial = new THREE.MultiMaterial( materials );
-            let mesh = new THREE.Mesh( geometry, faceMaterial );
-            this.parking = mesh;
+            this.parking = new THREE.Mesh( geometry, faceMaterial );
+            // this.parking = parking.parkingMesh;
             // mesh.position.set(-1,0.5,0);
             // mesh.scale.set(1.5,1,1);
             console.log("parking");
-            console.log(mesh);
-            this.scene.add( mesh );
-        }, onProgress,onError);
+            console.log(this.parking);
+            this.scene.add( this.parking );
+            this.vthree.progress[this.name]+=1;
+        }, this.onProgress,this.onError);
 
 
         this.createWireBox();
@@ -154,6 +169,31 @@ export default class Scene03{
 
     }
 
+    public Awake()
+    {
+        this.update();
+        try{
+            this.replaceShader();
+        }
+        catch (e)
+        {
+            console.log(e);
+            this.vthree.isFistUpdate[3] = false;
+
+
+            this.loader.load( './models/parking/parking.json', ( geometry, materials )=> {
+                var faceMaterial = new THREE.MultiMaterial( materials );
+                this.parking.material = faceMaterial;
+                // this.parking.material
+                // this.parking = this.parkingMesh;
+
+            }, this.onProgress,this.onError);
+
+            return true;
+        }
+
+        this.vthree.isFistUpdate[3] = true;
+    }
 
     public createWireBox()
     {
@@ -232,6 +272,10 @@ export default class Scene03{
         // }
 
         this.pariking_materials = this.parking.material[0];
+        this.isShaderReplace = true;
+        this.update();
+
+
 
     }
 
@@ -314,7 +358,7 @@ export default class Scene03{
 
         if(e.key == "R")
         {
-            this.replaceShader();
+            this.Awake();
         }
 
         if(e.key == "s")
@@ -391,8 +435,10 @@ export default class Scene03{
     // ******************************************************
 
 
-    public update(time)
+    public update(time?)
     {
+
+
 
 
         this.uniform.time.value += 0.01;
