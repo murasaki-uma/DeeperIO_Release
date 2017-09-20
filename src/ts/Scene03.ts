@@ -145,7 +145,7 @@ export default class Scene03{
         this.loader = new THREE.JSONLoader();
 
         this.loader.load( './models/parking/parking.json', ( geometry, materials )=> {
-            var faceMaterial = new THREE.MultiMaterial( materials );
+            var faceMaterial =  materials ;
             this.parking = new THREE.Mesh( geometry, faceMaterial );
             // this.parking = parking.parkingMesh;
             // mesh.position.set(-1,0.5,0);
