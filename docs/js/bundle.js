@@ -47417,8 +47417,8 @@ var VThree = /** @class */ (function () {
             }
         }
         //
-        // console.log("progress");
-        // console.log(this.progress);
+        console.log("progress");
+        console.log(this.progress);
         if (this.isUpdate) {
             requestAnimationFrame(this.draw.bind(this));
         }

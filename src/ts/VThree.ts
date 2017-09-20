@@ -436,8 +436,8 @@ export default class VThree
         }
 
         //
-        // console.log("progress");
-        // console.log(this.progress);
+        console.log("progress");
+        console.log(this.progress);
 
 
         if (this.isUpdate) {
