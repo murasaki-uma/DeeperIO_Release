@@ -47391,7 +47391,7 @@ var VThree = /** @class */ (function () {
                     }
                 }
             }
-            __WEBPACK_IMPORTED_MODULE_1_jquery__('.process').text(Math.ceil(p / 4.0) - 1);
+            __WEBPACK_IMPORTED_MODULE_1_jquery__('.process').text(Math.ceil(p / 4.0 - 10));
         }
         if (this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
             this.sceneFirtstUpdateDelay--;
@@ -47400,6 +47400,7 @@ var VThree = /** @class */ (function () {
                 this.sceneFirtstUpdateDelay = this.firstupdateDelayNum;
                 this.awakedNum++;
             }
+            __WEBPACK_IMPORTED_MODULE_1_jquery__('.process').text(90 + 10 / 4 * this.awakedNum);
         }
         this.stats.update(time);
         this.scenes[this.NUM].update(time, this.isUpdate);

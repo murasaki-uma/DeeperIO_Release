@@ -395,7 +395,7 @@ export default class VThree
                     }
                 }
             }
-            $('.process').text(Math.ceil(p/4.0)-1);
+            $('.process').text(Math.ceil(p/4.0-10));
 
         }
         if(this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
@@ -408,6 +408,8 @@ export default class VThree
                 this.sceneFirtstUpdateDelay = this.firstupdateDelayNum;
                 this.awakedNum++;
             }
+
+            $('.process').text(90 + 10/4 * this.awakedNum);
         }
 
         this.stats.update(time);
