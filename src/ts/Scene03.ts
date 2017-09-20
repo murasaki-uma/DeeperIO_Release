@@ -157,6 +157,8 @@ export default class Scene03{
         }, this.onProgress,this.onError);
 
 
+
+
         this.createWireBox();
 
     }
