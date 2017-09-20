@@ -379,8 +379,10 @@ export default class VThree
         if(!this.isAllSceneAwaking)
         {
             let count = 0;
+            let p = 0;
             for (let i = 0; i < this.scenes.length; i++) {
 
+                p += this.progress[this.scenes[i].name];
                 if (this.progress[this.scenes[i].name] == 100) {
                     count++;
                 }
@@ -393,7 +395,7 @@ export default class VThree
                     }
                 }
             }
-
+            $('.process').text(Math.ceil(p/4.0)-1);
 
         }
         if(this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
