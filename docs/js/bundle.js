@@ -70085,7 +70085,7 @@ var Scene02 = /** @class */ (function () {
             this.loader.load("models/pal/pal_decimated.json", function (geometry, materials) {
                 _this.pal.materi = materials;
                 // this.vthree.progress[this.name] += 1;
-            }, this.onProgress, this.onError);
+            });
             return true;
         }
         this.vthree.isFistUpdate[2] = true;
@@ -70678,9 +70678,7 @@ var Scene03 = /** @class */ (function () {
             this.loader.load('./models/parking/parking.json', function (geometry, materials) {
                 var faceMaterial = new __WEBPACK_IMPORTED_MODULE_0_three__["MultiMaterial"](materials);
                 _this.parking.material = faceMaterial;
-                // this.parking.material
-                // this.parking = this.parkingMesh;
-            }, this.onProgress, this.onError);
+            });
             return true;
         }
         this.vthree.isFistUpdate[3] = true;

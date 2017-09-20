@@ -180,7 +180,7 @@ export default class Scene02{
 
                     this.pal.materi = materials;
                     // this.vthree.progress[this.name] += 1;
-                }, this.onProgress,this.onError);
+                });
 
                 return true;
             }

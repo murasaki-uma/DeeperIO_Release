@@ -139,6 +139,7 @@ export default class Scene03{
                 console.log(Math.round(percentComplete) + '% downloaded');
             }
         };
+
         this.onError = function (xhr) {
         };
         this.loader = new THREE.JSONLoader();
@@ -175,10 +176,8 @@ export default class Scene03{
             this.loader.load( './models/parking/parking.json', ( geometry, materials )=> {
                 var faceMaterial = new THREE.MultiMaterial( materials );
                 this.parking.material = faceMaterial;
-                // this.parking.material
-                // this.parking = this.parkingMesh;
 
-            }, this.onProgress,this.onError);
+            });
 
             return true;
         }
