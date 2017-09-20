@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 1);
+/******/ 	return __webpack_require__(__webpack_require__.s = 7);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -44303,25 +44303,2435 @@ function CanvasRenderer() {
 
 /***/ }),
 /* 1 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * VERSION: 1.20.2
+ * DATE: 2017-06-30
+ * UPDATES AND DOCS AT: http://greensock.com
+ *
+ * @license Copyright (c) 2008-2017, GreenSock. All rights reserved.
+ * This work is subject to the terms at http://greensock.com/standard-license or for
+ * Club GreenSock members, the software agreement that was issued with your membership.
+ * 
+ * @author: Jack Doyle, jack@greensock.com
+ */
+(function(window, moduleName) {
+
+		"use strict";
+		var _exports = {},
+			_doc = window.document,
+			_globals = window.GreenSockGlobals = window.GreenSockGlobals || window;
+		if (_globals.TweenLite) {
+			return; //in case the core set of classes is already loaded, don't instantiate twice.
+		}
+		var _namespace = function(ns) {
+				var a = ns.split("."),
+					p = _globals, i;
+				for (i = 0; i < a.length; i++) {
+					p[a[i]] = p = p[a[i]] || {};
+				}
+				return p;
+			},
+			gs = _namespace("com.greensock"),
+			_tinyNum = 0.0000000001,
+			_slice = function(a) { //don't use Array.prototype.slice.call(target, 0) because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+				var b = [],
+					l = a.length,
+					i;
+				for (i = 0; i !== l; b.push(a[i++])) {}
+				return b;
+			},
+			_emptyFunc = function() {},
+			_isArray = (function() { //works around issues in iframe environments where the Array global isn't shared, thus if the object originates in a different window/iframe, "(obj instanceof Array)" will evaluate false. We added some speed optimizations to avoid Object.prototype.toString.call() unless it's absolutely necessary because it's VERY slow (like 20x slower)
+				var toString = Object.prototype.toString,
+					array = toString.call([]);
+				return function(obj) {
+					return obj != null && (obj instanceof Array || (typeof(obj) === "object" && !!obj.push && toString.call(obj) === array));
+				};
+			}()),
+			a, i, p, _ticker, _tickerActive,
+			_defLookup = {},
+
+			/**
+			 * @constructor
+			 * Defines a GreenSock class, optionally with an array of dependencies that must be instantiated first and passed into the definition.
+			 * This allows users to load GreenSock JS files in any order even if they have interdependencies (like CSSPlugin extends TweenPlugin which is
+			 * inside TweenLite.js, but if CSSPlugin is loaded first, it should wait to run its code until TweenLite.js loads and instantiates TweenPlugin
+			 * and then pass TweenPlugin to CSSPlugin's definition). This is all done automatically and internally.
+			 *
+			 * Every definition will be added to a "com.greensock" global object (typically window, but if a window.GreenSockGlobals object is found,
+			 * it will go there as of v1.7). For example, TweenLite will be found at window.com.greensock.TweenLite and since it's a global class that should be available anywhere,
+			 * it is ALSO referenced at window.TweenLite. However some classes aren't considered global, like the base com.greensock.core.Animation class, so
+			 * those will only be at the package like window.com.greensock.core.Animation. Again, if you define a GreenSockGlobals object on the window, everything
+			 * gets tucked neatly inside there instead of on the window directly. This allows you to do advanced things like load multiple versions of GreenSock
+			 * files and put them into distinct objects (imagine a banner ad uses a newer version but the main site uses an older one). In that case, you could
+			 * sandbox the banner one like:
+			 *
+			 * <script>
+			 *     var gs = window.GreenSockGlobals = {}; //the newer version we're about to load could now be referenced in a "gs" object, like gs.TweenLite.to(...). Use whatever alias you want as long as it's unique, "gs" or "banner" or whatever.
+			 * </script>
+			 * <script src="js/greensock/v1.7/TweenMax.js"></script>
+			 * <script>
+			 *     window.GreenSockGlobals = window._gsQueue = window._gsDefine = null; //reset it back to null (along with the special _gsQueue variable) so that the next load of TweenMax affects the window and we can reference things directly like TweenLite.to(...)
+			 * </script>
+			 * <script src="js/greensock/v1.6/TweenMax.js"></script>
+			 * <script>
+			 *     gs.TweenLite.to(...); //would use v1.7
+			 *     TweenLite.to(...); //would use v1.6
+			 * </script>
+			 *
+			 * @param {!string} ns The namespace of the class definition, leaving off "com.greensock." as that's assumed. For example, "TweenLite" or "plugins.CSSPlugin" or "easing.Back".
+			 * @param {!Array.<string>} dependencies An array of dependencies (described as their namespaces minus "com.greensock." prefix). For example ["TweenLite","plugins.TweenPlugin","core.Animation"]
+			 * @param {!function():Object} func The function that should be called and passed the resolved dependencies which will return the actual class for this definition.
+			 * @param {boolean=} global If true, the class will be added to the global scope (typically window unless you define a window.GreenSockGlobals object)
+			 */
+			Definition = function(ns, dependencies, func, global) {
+				this.sc = (_defLookup[ns]) ? _defLookup[ns].sc : []; //subclasses
+				_defLookup[ns] = this;
+				this.gsClass = null;
+				this.func = func;
+				var _classes = [];
+				this.check = function(init) {
+					var i = dependencies.length,
+						missing = i,
+						cur, a, n, cl;
+					while (--i > -1) {
+						if ((cur = _defLookup[dependencies[i]] || new Definition(dependencies[i], [])).gsClass) {
+							_classes[i] = cur.gsClass;
+							missing--;
+						} else if (init) {
+							cur.sc.push(this);
+						}
+					}
+					if (missing === 0 && func) {
+						a = ("com.greensock." + ns).split(".");
+						n = a.pop();
+						cl = _namespace(a.join("."))[n] = this.gsClass = func.apply(func, _classes);
+
+						//exports to multiple environments
+						if (global) {
+							_globals[n] = _exports[n] = cl; //provides a way to avoid global namespace pollution. By default, the main classes like TweenLite, Power1, Strong, etc. are added to window unless a GreenSockGlobals is defined. So if you want to have things added to a custom object instead, just do something like window.GreenSockGlobals = {} before loading any GreenSock files. You can even set up an alias like window.GreenSockGlobals = windows.gs = {} so that you can access everything like gs.TweenLite. Also remember that ALL classes are added to the window.com.greensock object (in their respective packages, like com.greensock.easing.Power1, com.greensock.TweenLite, etc.)
+							if (typeof(module) !== "undefined" && module.exports) { //node
+								if (ns === moduleName) {
+									module.exports = _exports[moduleName] = cl;
+									for (i in _exports) {
+										cl[i] = _exports[i];
+									}
+								} else if (_exports[moduleName]) {
+									_exports[moduleName][n] = cl;
+								}
+							} else if (true){ //AMD
+								!(__WEBPACK_AMD_DEFINE_ARRAY__ = [], __WEBPACK_AMD_DEFINE_RESULT__ = function() { return cl; }.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+							}
+						}
+						for (i = 0; i < this.sc.length; i++) {
+							this.sc[i].check();
+						}
+					}
+				};
+				this.check(true);
+			},
+
+			//used to create Definition instances (which basically registers a class that has dependencies).
+			_gsDefine = window._gsDefine = function(ns, dependencies, func, global) {
+				return new Definition(ns, dependencies, func, global);
+			},
+
+			//a quick way to create a class that doesn't have any dependencies. Returns the class, but first registers it in the GreenSock namespace so that other classes can grab it (other classes might be dependent on the class).
+			_class = gs._class = function(ns, func, global) {
+				func = func || function() {};
+				_gsDefine(ns, [], function(){ return func; }, global);
+				return func;
+			};
+
+		_gsDefine.globals = _globals;
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * Ease
+ * ----------------------------------------------------------------
+ */
+		var _baseParams = [0, 0, 1, 1],
+			Ease = _class("easing.Ease", function(func, extraParams, type, power) {
+				this._func = func;
+				this._type = type || 0;
+				this._power = power || 0;
+				this._params = extraParams ? _baseParams.concat(extraParams) : _baseParams;
+			}, true),
+			_easeMap = Ease.map = {},
+			_easeReg = Ease.register = function(ease, names, types, create) {
+				var na = names.split(","),
+					i = na.length,
+					ta = (types || "easeIn,easeOut,easeInOut").split(","),
+					e, name, j, type;
+				while (--i > -1) {
+					name = na[i];
+					e = create ? _class("easing."+name, null, true) : gs.easing[name] || {};
+					j = ta.length;
+					while (--j > -1) {
+						type = ta[j];
+						_easeMap[name + "." + type] = _easeMap[type + name] = e[type] = ease.getRatio ? ease : ease[type] || new ease();
+					}
+				}
+			};
+
+		p = Ease.prototype;
+		p._calcEnd = false;
+		p.getRatio = function(p) {
+			if (this._func) {
+				this._params[0] = p;
+				return this._func.apply(null, this._params);
+			}
+			var t = this._type,
+				pw = this._power,
+				r = (t === 1) ? 1 - p : (t === 2) ? p : (p < 0.5) ? p * 2 : (1 - p) * 2;
+			if (pw === 1) {
+				r *= r;
+			} else if (pw === 2) {
+				r *= r * r;
+			} else if (pw === 3) {
+				r *= r * r * r;
+			} else if (pw === 4) {
+				r *= r * r * r * r;
+			}
+			return (t === 1) ? 1 - r : (t === 2) ? r : (p < 0.5) ? r / 2 : 1 - (r / 2);
+		};
+
+		//create all the standard eases like Linear, Quad, Cubic, Quart, Quint, Strong, Power0, Power1, Power2, Power3, and Power4 (each with easeIn, easeOut, and easeInOut)
+		a = ["Linear","Quad","Cubic","Quart","Quint,Strong"];
+		i = a.length;
+		while (--i > -1) {
+			p = a[i]+",Power"+i;
+			_easeReg(new Ease(null,null,1,i), p, "easeOut", true);
+			_easeReg(new Ease(null,null,2,i), p, "easeIn" + ((i === 0) ? ",easeNone" : ""));
+			_easeReg(new Ease(null,null,3,i), p, "easeInOut");
+		}
+		_easeMap.linear = gs.easing.Linear.easeIn;
+		_easeMap.swing = gs.easing.Quad.easeInOut; //for jQuery folks
+
+
+/*
+ * ----------------------------------------------------------------
+ * EventDispatcher
+ * ----------------------------------------------------------------
+ */
+		var EventDispatcher = _class("events.EventDispatcher", function(target) {
+			this._listeners = {};
+			this._eventTarget = target || this;
+		});
+		p = EventDispatcher.prototype;
+
+		p.addEventListener = function(type, callback, scope, useParam, priority) {
+			priority = priority || 0;
+			var list = this._listeners[type],
+				index = 0,
+				listener, i;
+			if (this === _ticker && !_tickerActive) {
+				_ticker.wake();
+			}
+			if (list == null) {
+				this._listeners[type] = list = [];
+			}
+			i = list.length;
+			while (--i > -1) {
+				listener = list[i];
+				if (listener.c === callback && listener.s === scope) {
+					list.splice(i, 1);
+				} else if (index === 0 && listener.pr < priority) {
+					index = i + 1;
+				}
+			}
+			list.splice(index, 0, {c:callback, s:scope, up:useParam, pr:priority});
+		};
+
+		p.removeEventListener = function(type, callback) {
+			var list = this._listeners[type], i;
+			if (list) {
+				i = list.length;
+				while (--i > -1) {
+					if (list[i].c === callback) {
+						list.splice(i, 1);
+						return;
+					}
+				}
+			}
+		};
+
+		p.dispatchEvent = function(type) {
+			var list = this._listeners[type],
+				i, t, listener;
+			if (list) {
+				i = list.length;
+				if (i > 1) { 
+					list = list.slice(0); //in case addEventListener() is called from within a listener/callback (otherwise the index could change, resulting in a skip)
+				}
+				t = this._eventTarget;
+				while (--i > -1) {
+					listener = list[i];
+					if (listener) {
+						if (listener.up) {
+							listener.c.call(listener.s || t, {type:type, target:t});
+						} else {
+							listener.c.call(listener.s || t);
+						}
+					}
+				}
+			}
+		};
+
+
+/*
+ * ----------------------------------------------------------------
+ * Ticker
+ * ----------------------------------------------------------------
+ */
+ 		var _reqAnimFrame = window.requestAnimationFrame,
+			_cancelAnimFrame = window.cancelAnimationFrame,
+			_getTime = Date.now || function() {return new Date().getTime();},
+			_lastUpdate = _getTime();
+
+		//now try to determine the requestAnimationFrame and cancelAnimationFrame functions and if none are found, we'll use a setTimeout()/clearTimeout() polyfill.
+		a = ["ms","moz","webkit","o"];
+		i = a.length;
+		while (--i > -1 && !_reqAnimFrame) {
+			_reqAnimFrame = window[a[i] + "RequestAnimationFrame"];
+			_cancelAnimFrame = window[a[i] + "CancelAnimationFrame"] || window[a[i] + "CancelRequestAnimationFrame"];
+		}
+
+		_class("Ticker", function(fps, useRAF) {
+			var _self = this,
+				_startTime = _getTime(),
+				_useRAF = (useRAF !== false && _reqAnimFrame) ? "auto" : false,
+				_lagThreshold = 500,
+				_adjustedLag = 33,
+				_tickWord = "tick", //helps reduce gc burden
+				_fps, _req, _id, _gap, _nextTime,
+				_tick = function(manual) {
+					var elapsed = _getTime() - _lastUpdate,
+						overlap, dispatch;
+					if (elapsed > _lagThreshold) {
+						_startTime += elapsed - _adjustedLag;
+					}
+					_lastUpdate += elapsed;
+					_self.time = (_lastUpdate - _startTime) / 1000;
+					overlap = _self.time - _nextTime;
+					if (!_fps || overlap > 0 || manual === true) {
+						_self.frame++;
+						_nextTime += overlap + (overlap >= _gap ? 0.004 : _gap - overlap);
+						dispatch = true;
+					}
+					if (manual !== true) { //make sure the request is made before we dispatch the "tick" event so that timing is maintained. Otherwise, if processing the "tick" requires a bunch of time (like 15ms) and we're using a setTimeout() that's based on 16.7ms, it'd technically take 31.7ms between frames otherwise.
+						_id = _req(_tick);
+					}
+					if (dispatch) {
+						_self.dispatchEvent(_tickWord);
+					}
+				};
+
+			EventDispatcher.call(_self);
+			_self.time = _self.frame = 0;
+			_self.tick = function() {
+				_tick(true);
+			};
+
+			_self.lagSmoothing = function(threshold, adjustedLag) {
+				_lagThreshold = threshold || (1 / _tinyNum); //zero should be interpreted as basically unlimited
+				_adjustedLag = Math.min(adjustedLag, _lagThreshold, 0);
+			};
+
+			_self.sleep = function() {
+				if (_id == null) {
+					return;
+				}
+				if (!_useRAF || !_cancelAnimFrame) {
+					clearTimeout(_id);
+				} else {
+					_cancelAnimFrame(_id);
+				}
+				_req = _emptyFunc;
+				_id = null;
+				if (_self === _ticker) {
+					_tickerActive = false;
+				}
+			};
+
+			_self.wake = function(seamless) {
+				if (_id !== null) {
+					_self.sleep();
+				} else if (seamless) {
+					_startTime += -_lastUpdate + (_lastUpdate = _getTime());
+				} else if (_self.frame > 10) { //don't trigger lagSmoothing if we're just waking up, and make sure that at least 10 frames have elapsed because of the iOS bug that we work around below with the 1.5-second setTimout().
+					_lastUpdate = _getTime() - _lagThreshold + 5;
+				}
+				_req = (_fps === 0) ? _emptyFunc : (!_useRAF || !_reqAnimFrame) ? function(f) { return setTimeout(f, ((_nextTime - _self.time) * 1000 + 1) | 0); } : _reqAnimFrame;
+				if (_self === _ticker) {
+					_tickerActive = true;
+				}
+				_tick(2);
+			};
+
+			_self.fps = function(value) {
+				if (!arguments.length) {
+					return _fps;
+				}
+				_fps = value;
+				_gap = 1 / (_fps || 60);
+				_nextTime = this.time + _gap;
+				_self.wake();
+			};
+
+			_self.useRAF = function(value) {
+				if (!arguments.length) {
+					return _useRAF;
+				}
+				_self.sleep();
+				_useRAF = value;
+				_self.fps(_fps);
+			};
+			_self.fps(fps);
+
+			//a bug in iOS 6 Safari occasionally prevents the requestAnimationFrame from working initially, so we use a 1.5-second timeout that automatically falls back to setTimeout() if it senses this condition.
+			setTimeout(function() {
+				if (_useRAF === "auto" && _self.frame < 5 && _doc.visibilityState !== "hidden") {
+					_self.useRAF(false);
+				}
+			}, 1500);
+		});
+
+		p = gs.Ticker.prototype = new gs.events.EventDispatcher();
+		p.constructor = gs.Ticker;
+
+
+/*
+ * ----------------------------------------------------------------
+ * Animation
+ * ----------------------------------------------------------------
+ */
+		var Animation = _class("core.Animation", function(duration, vars) {
+				this.vars = vars = vars || {};
+				this._duration = this._totalDuration = duration || 0;
+				this._delay = Number(vars.delay) || 0;
+				this._timeScale = 1;
+				this._active = (vars.immediateRender === true);
+				this.data = vars.data;
+				this._reversed = (vars.reversed === true);
+
+				if (!_rootTimeline) {
+					return;
+				}
+				if (!_tickerActive) { //some browsers (like iOS 6 Safari) shut down JavaScript execution when the tab is disabled and they [occasionally] neglect to start up requestAnimationFrame again when returning - this code ensures that the engine starts up again properly.
+					_ticker.wake();
+				}
+
+				var tl = this.vars.useFrames ? _rootFramesTimeline : _rootTimeline;
+				tl.add(this, tl._time);
+
+				if (this.vars.paused) {
+					this.paused(true);
+				}
+			});
+
+		_ticker = Animation.ticker = new gs.Ticker();
+		p = Animation.prototype;
+		p._dirty = p._gc = p._initted = p._paused = false;
+		p._totalTime = p._time = 0;
+		p._rawPrevTime = -1;
+		p._next = p._last = p._onUpdate = p._timeline = p.timeline = null;
+		p._paused = false;
+
+
+		//some browsers (like iOS) occasionally drop the requestAnimationFrame event when the user switches to a different tab and then comes back again, so we use a 2-second setTimeout() to sense if/when that condition occurs and then wake() the ticker.
+		var _checkTimeout = function() {
+				if (_tickerActive && _getTime() - _lastUpdate > 2000 && _doc.visibilityState !== "hidden") {
+					_ticker.wake();
+				}
+				var t = setTimeout(_checkTimeout, 2000);
+				if (t.unref) {
+					// allows a node process to exit even if the timeout’s callback hasn't been invoked. Without it, the node process could hang as this function is called every two seconds.
+					t.unref();
+				}
+			};
+		_checkTimeout();
+
+
+		p.play = function(from, suppressEvents) {
+			if (from != null) {
+				this.seek(from, suppressEvents);
+			}
+			return this.reversed(false).paused(false);
+		};
+
+		p.pause = function(atTime, suppressEvents) {
+			if (atTime != null) {
+				this.seek(atTime, suppressEvents);
+			}
+			return this.paused(true);
+		};
+
+		p.resume = function(from, suppressEvents) {
+			if (from != null) {
+				this.seek(from, suppressEvents);
+			}
+			return this.paused(false);
+		};
+
+		p.seek = function(time, suppressEvents) {
+			return this.totalTime(Number(time), suppressEvents !== false);
+		};
+
+		p.restart = function(includeDelay, suppressEvents) {
+			return this.reversed(false).paused(false).totalTime(includeDelay ? -this._delay : 0, (suppressEvents !== false), true);
+		};
+
+		p.reverse = function(from, suppressEvents) {
+			if (from != null) {
+				this.seek((from || this.totalDuration()), suppressEvents);
+			}
+			return this.reversed(true).paused(false);
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			//stub - we override this method in subclasses.
+		};
+
+		p.invalidate = function() {
+			this._time = this._totalTime = 0;
+			this._initted = this._gc = false;
+			this._rawPrevTime = -1;
+			if (this._gc || !this.timeline) {
+				this._enabled(true);
+			}
+			return this;
+		};
+
+		p.isActive = function() {
+			var tl = this._timeline, //the 2 root timelines won't have a _timeline; they're always active.
+				startTime = this._startTime,
+				rawTime;
+			return (!tl || (!this._gc && !this._paused && tl.isActive() && (rawTime = tl.rawTime(true)) >= startTime && rawTime < startTime + this.totalDuration() / this._timeScale - 0.0000001));
+		};
+
+		p._enabled = function (enabled, ignoreTimeline) {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			this._gc = !enabled;
+			this._active = this.isActive();
+			if (ignoreTimeline !== true) {
+				if (enabled && !this.timeline) {
+					this._timeline.add(this, this._startTime - this._delay);
+				} else if (!enabled && this.timeline) {
+					this._timeline._remove(this, true);
+				}
+			}
+			return false;
+		};
+
+
+		p._kill = function(vars, target) {
+			return this._enabled(false, false);
+		};
+
+		p.kill = function(vars, target) {
+			this._kill(vars, target);
+			return this;
+		};
+
+		p._uncache = function(includeSelf) {
+			var tween = includeSelf ? this : this.timeline;
+			while (tween) {
+				tween._dirty = true;
+				tween = tween.timeline;
+			}
+			return this;
+		};
+
+		p._swapSelfInParams = function(params) {
+			var i = params.length,
+				copy = params.concat();
+			while (--i > -1) {
+				if (params[i] === "{self}") {
+					copy[i] = this;
+				}
+			}
+			return copy;
+		};
+
+		p._callback = function(type) {
+			var v = this.vars,
+				callback = v[type],
+				params = v[type + "Params"],
+				scope = v[type + "Scope"] || v.callbackScope || this,
+				l = params ? params.length : 0;
+			switch (l) { //speed optimization; call() is faster than apply() so use it when there are only a few parameters (which is by far most common). Previously we simply did var v = this.vars; v[type].apply(v[type + "Scope"] || v.callbackScope || this, v[type + "Params"] || _blankArray);
+				case 0: callback.call(scope); break;
+				case 1: callback.call(scope, params[0]); break;
+				case 2: callback.call(scope, params[0], params[1]); break;
+				default: callback.apply(scope, params);
+			}
+		};
+
+//----Animation getters/setters --------------------------------------------------------
+
+		p.eventCallback = function(type, callback, params, scope) {
+			if ((type || "").substr(0,2) === "on") {
+				var v = this.vars;
+				if (arguments.length === 1) {
+					return v[type];
+				}
+				if (callback == null) {
+					delete v[type];
+				} else {
+					v[type] = callback;
+					v[type + "Params"] = (_isArray(params) && params.join("").indexOf("{self}") !== -1) ? this._swapSelfInParams(params) : params;
+					v[type + "Scope"] = scope;
+				}
+				if (type === "onUpdate") {
+					this._onUpdate = callback;
+				}
+			}
+			return this;
+		};
+
+		p.delay = function(value) {
+			if (!arguments.length) {
+				return this._delay;
+			}
+			if (this._timeline.smoothChildTiming) {
+				this.startTime( this._startTime + value - this._delay );
+			}
+			this._delay = value;
+			return this;
+		};
+
+		p.duration = function(value) {
+			if (!arguments.length) {
+				this._dirty = false;
+				return this._duration;
+			}
+			this._duration = this._totalDuration = value;
+			this._uncache(true); //true in case it's a TweenMax or TimelineMax that has a repeat - we'll need to refresh the totalDuration.
+			if (this._timeline.smoothChildTiming) if (this._time > 0) if (this._time < this._duration) if (value !== 0) {
+				this.totalTime(this._totalTime * (value / this._duration), true);
+			}
+			return this;
+		};
+
+		p.totalDuration = function(value) {
+			this._dirty = false;
+			return (!arguments.length) ? this._totalDuration : this.duration(value);
+		};
+
+		p.time = function(value, suppressEvents) {
+			if (!arguments.length) {
+				return this._time;
+			}
+			if (this._dirty) {
+				this.totalDuration();
+			}
+			return this.totalTime((value > this._duration) ? this._duration : value, suppressEvents);
+		};
+
+		p.totalTime = function(time, suppressEvents, uncapped) {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			if (!arguments.length) {
+				return this._totalTime;
+			}
+			if (this._timeline) {
+				if (time < 0 && !uncapped) {
+					time += this.totalDuration();
+				}
+				if (this._timeline.smoothChildTiming) {
+					if (this._dirty) {
+						this.totalDuration();
+					}
+					var totalDuration = this._totalDuration,
+						tl = this._timeline;
+					if (time > totalDuration && !uncapped) {
+						time = totalDuration;
+					}
+					this._startTime = (this._paused ? this._pauseTime : tl._time) - ((!this._reversed ? time : totalDuration - time) / this._timeScale);
+					if (!tl._dirty) { //for performance improvement. If the parent's cache is already dirty, it already took care of marking the ancestors as dirty too, so skip the function call here.
+						this._uncache(false);
+					}
+					//in case any of the ancestor timelines had completed but should now be enabled, we should reset their totalTime() which will also ensure that they're lined up properly and enabled. Skip for animations that are on the root (wasteful). Example: a TimelineLite.exportRoot() is performed when there's a paused tween on the root, the export will not complete until that tween is unpaused, but imagine a child gets restarted later, after all [unpaused] tweens have completed. The startTime of that child would get pushed out, but one of the ancestors may have completed.
+					if (tl._timeline) {
+						while (tl._timeline) {
+							if (tl._timeline._time !== (tl._startTime + tl._totalTime) / tl._timeScale) {
+								tl.totalTime(tl._totalTime, true);
+							}
+							tl = tl._timeline;
+						}
+					}
+				}
+				if (this._gc) {
+					this._enabled(true, false);
+				}
+				if (this._totalTime !== time || this._duration === 0) {
+					if (_lazyTweens.length) {
+						_lazyRender();
+					}
+					this.render(time, suppressEvents, false);
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when someone calls seek() or time() or progress(), they expect an immediate render.
+						_lazyRender();
+					}
+				}
+			}
+			return this;
+		};
+
+		p.progress = p.totalProgress = function(value, suppressEvents) {
+			var duration = this.duration();
+			return (!arguments.length) ? (duration ? this._time / duration : this.ratio) : this.totalTime(duration * value, suppressEvents);
+		};
+
+		p.startTime = function(value) {
+			if (!arguments.length) {
+				return this._startTime;
+			}
+			if (value !== this._startTime) {
+				this._startTime = value;
+				if (this.timeline) if (this.timeline._sortChildren) {
+					this.timeline.add(this, value - this._delay); //ensures that any necessary re-sequencing of Animations in the timeline occurs to make sure the rendering order is correct.
+				}
+			}
+			return this;
+		};
+
+		p.endTime = function(includeRepeats) {
+			return this._startTime + ((includeRepeats != false) ? this.totalDuration() : this.duration()) / this._timeScale;
+		};
+
+		p.timeScale = function(value) {
+			if (!arguments.length) {
+				return this._timeScale;
+			}
+			value = value || _tinyNum; //can't allow zero because it'll throw the math off
+			if (this._timeline && this._timeline.smoothChildTiming) {
+				var pauseTime = this._pauseTime,
+					t = (pauseTime || pauseTime === 0) ? pauseTime : this._timeline.totalTime();
+				this._startTime = t - ((t - this._startTime) * this._timeScale / value);
+			}
+			this._timeScale = value;
+			return this._uncache(false);
+		};
+
+		p.reversed = function(value) {
+			if (!arguments.length) {
+				return this._reversed;
+			}
+			if (value != this._reversed) {
+				this._reversed = value;
+				this.totalTime(((this._timeline && !this._timeline.smoothChildTiming) ? this.totalDuration() - this._totalTime : this._totalTime), true);
+			}
+			return this;
+		};
+
+		p.paused = function(value) {
+			if (!arguments.length) {
+				return this._paused;
+			}
+			var tl = this._timeline,
+				raw, elapsed;
+			if (value != this._paused) if (tl) {
+				if (!_tickerActive && !value) {
+					_ticker.wake();
+				}
+				raw = tl.rawTime();
+				elapsed = raw - this._pauseTime;
+				if (!value && tl.smoothChildTiming) {
+					this._startTime += elapsed;
+					this._uncache(false);
+				}
+				this._pauseTime = value ? raw : null;
+				this._paused = value;
+				this._active = this.isActive();
+				if (!value && elapsed !== 0 && this._initted && this.duration()) {
+					raw = tl.smoothChildTiming ? this._totalTime : (raw - this._startTime) / this._timeScale;
+					this.render(raw, (raw === this._totalTime), true); //in case the target's properties changed via some other tween or manual update by the user, we should force a render.
+				}
+			}
+			if (this._gc && !value) {
+				this._enabled(true, false);
+			}
+			return this;
+		};
+
+
+/*
+ * ----------------------------------------------------------------
+ * SimpleTimeline
+ * ----------------------------------------------------------------
+ */
+		var SimpleTimeline = _class("core.SimpleTimeline", function(vars) {
+			Animation.call(this, 0, vars);
+			this.autoRemoveChildren = this.smoothChildTiming = true;
+		});
+
+		p = SimpleTimeline.prototype = new Animation();
+		p.constructor = SimpleTimeline;
+		p.kill()._gc = false;
+		p._first = p._last = p._recent = null;
+		p._sortChildren = false;
+
+		p.add = p.insert = function(child, position, align, stagger) {
+			var prevTween, st;
+			child._startTime = Number(position || 0) + child._delay;
+			if (child._paused) if (this !== child._timeline) { //we only adjust the _pauseTime if it wasn't in this timeline already. Remember, sometimes a tween will be inserted again into the same timeline when its startTime is changed so that the tweens in the TimelineLite/Max are re-ordered properly in the linked list (so everything renders in the proper order).
+				child._pauseTime = child._startTime + ((this.rawTime() - child._startTime) / child._timeScale);
+			}
+			if (child.timeline) {
+				child.timeline._remove(child, true); //removes from existing timeline so that it can be properly added to this one.
+			}
+			child.timeline = child._timeline = this;
+			if (child._gc) {
+				child._enabled(true, true);
+			}
+			prevTween = this._last;
+			if (this._sortChildren) {
+				st = child._startTime;
+				while (prevTween && prevTween._startTime > st) {
+					prevTween = prevTween._prev;
+				}
+			}
+			if (prevTween) {
+				child._next = prevTween._next;
+				prevTween._next = child;
+			} else {
+				child._next = this._first;
+				this._first = child;
+			}
+			if (child._next) {
+				child._next._prev = child;
+			} else {
+				this._last = child;
+			}
+			child._prev = prevTween;
+			this._recent = child;
+			if (this._timeline) {
+				this._uncache(true);
+			}
+			return this;
+		};
+
+		p._remove = function(tween, skipDisable) {
+			if (tween.timeline === this) {
+				if (!skipDisable) {
+					tween._enabled(false, true);
+				}
+
+				if (tween._prev) {
+					tween._prev._next = tween._next;
+				} else if (this._first === tween) {
+					this._first = tween._next;
+				}
+				if (tween._next) {
+					tween._next._prev = tween._prev;
+				} else if (this._last === tween) {
+					this._last = tween._prev;
+				}
+				tween._next = tween._prev = tween.timeline = null;
+				if (tween === this._recent) {
+					this._recent = this._last;
+				}
+
+				if (this._timeline) {
+					this._uncache(true);
+				}
+			}
+			return this;
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			var tween = this._first,
+				next;
+			this._totalTime = this._time = this._rawPrevTime = time;
+			while (tween) {
+				next = tween._next; //record it here because the value could change after rendering...
+				if (tween._active || (time >= tween._startTime && !tween._paused && !tween._gc)) {
+					if (!tween._reversed) {
+						tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+					} else {
+						tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+					}
+				}
+				tween = next;
+			}
+		};
+
+		p.rawTime = function() {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			return this._totalTime;
+		};
+
+/*
+ * ----------------------------------------------------------------
+ * TweenLite
+ * ----------------------------------------------------------------
+ */
+		var TweenLite = _class("TweenLite", function(target, duration, vars) {
+				Animation.call(this, duration, vars);
+				this.render = TweenLite.prototype.render; //speed optimization (avoid prototype lookup on this "hot" method)
+
+				if (target == null) {
+					throw "Cannot tween a null target.";
+				}
+
+				this.target = target = (typeof(target) !== "string") ? target : TweenLite.selector(target) || target;
+
+				var isSelector = (target.jquery || (target.length && target !== window && target[0] && (target[0] === window || (target[0].nodeType && target[0].style && !target.nodeType)))),
+					overwrite = this.vars.overwrite,
+					i, targ, targets;
+
+				this._overwrite = overwrite = (overwrite == null) ? _overwriteLookup[TweenLite.defaultOverwrite] : (typeof(overwrite) === "number") ? overwrite >> 0 : _overwriteLookup[overwrite];
+
+				if ((isSelector || target instanceof Array || (target.push && _isArray(target))) && typeof(target[0]) !== "number") {
+					this._targets = targets = _slice(target);  //don't use Array.prototype.slice.call(target, 0) because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+					this._propLookup = [];
+					this._siblings = [];
+					for (i = 0; i < targets.length; i++) {
+						targ = targets[i];
+						if (!targ) {
+							targets.splice(i--, 1);
+							continue;
+						} else if (typeof(targ) === "string") {
+							targ = targets[i--] = TweenLite.selector(targ); //in case it's an array of strings
+							if (typeof(targ) === "string") {
+								targets.splice(i+1, 1); //to avoid an endless loop (can't imagine why the selector would return a string, but just in case)
+							}
+							continue;
+						} else if (targ.length && targ !== window && targ[0] && (targ[0] === window || (targ[0].nodeType && targ[0].style && !targ.nodeType))) { //in case the user is passing in an array of selector objects (like jQuery objects), we need to check one more level and pull things out if necessary. Also note that <select> elements pass all the criteria regarding length and the first child having style, so we must also check to ensure the target isn't an HTML node itself.
+							targets.splice(i--, 1);
+							this._targets = targets = targets.concat(_slice(targ));
+							continue;
+						}
+						this._siblings[i] = _register(targ, this, false);
+						if (overwrite === 1) if (this._siblings[i].length > 1) {
+							_applyOverwrite(targ, this, null, 1, this._siblings[i]);
+						}
+					}
+
+				} else {
+					this._propLookup = {};
+					this._siblings = _register(target, this, false);
+					if (overwrite === 1) if (this._siblings.length > 1) {
+						_applyOverwrite(target, this, null, 1, this._siblings);
+					}
+				}
+				if (this.vars.immediateRender || (duration === 0 && this._delay === 0 && this.vars.immediateRender !== false)) {
+					this._time = -_tinyNum; //forces a render without having to set the render() "force" parameter to true because we want to allow lazying by default (using the "force" parameter always forces an immediate full render)
+					this.render(Math.min(0, -this._delay)); //in case delay is negative
+				}
+			}, true),
+			_isSelector = function(v) {
+				return (v && v.length && v !== window && v[0] && (v[0] === window || (v[0].nodeType && v[0].style && !v.nodeType))); //we cannot check "nodeType" if the target is window from within an iframe, otherwise it will trigger a security error in some browsers like Firefox.
+			},
+			_autoCSS = function(vars, target) {
+				var css = {},
+					p;
+				for (p in vars) {
+					if (!_reservedProps[p] && (!(p in target) || p === "transform" || p === "x" || p === "y" || p === "width" || p === "height" || p === "className" || p === "border") && (!_plugins[p] || (_plugins[p] && _plugins[p]._autoCSS))) { //note: <img> elements contain read-only "x" and "y" properties. We should also prioritize editing css width/height rather than the element's properties.
+						css[p] = vars[p];
+						delete vars[p];
+					}
+				}
+				vars.css = css;
+			};
+
+		p = TweenLite.prototype = new Animation();
+		p.constructor = TweenLite;
+		p.kill()._gc = false;
+
+//----TweenLite defaults, overwrite management, and root updates ----------------------------------------------------
+
+		p.ratio = 0;
+		p._firstPT = p._targets = p._overwrittenProps = p._startAt = null;
+		p._notifyPluginsOfEnabled = p._lazy = false;
+
+		TweenLite.version = "1.20.2";
+		TweenLite.defaultEase = p._ease = new Ease(null, null, 1, 1);
+		TweenLite.defaultOverwrite = "auto";
+		TweenLite.ticker = _ticker;
+		TweenLite.autoSleep = 120;
+		TweenLite.lagSmoothing = function(threshold, adjustedLag) {
+			_ticker.lagSmoothing(threshold, adjustedLag);
+		};
+
+		TweenLite.selector = window.$ || window.jQuery || function(e) {
+			var selector = window.$ || window.jQuery;
+			if (selector) {
+				TweenLite.selector = selector;
+				return selector(e);
+			}
+			return (typeof(_doc) === "undefined") ? e : (_doc.querySelectorAll ? _doc.querySelectorAll(e) : _doc.getElementById((e.charAt(0) === "#") ? e.substr(1) : e));
+		};
+
+		var _lazyTweens = [],
+			_lazyLookup = {},
+			_numbersExp = /(?:(-|-=|\+=)?\d*\.?\d*(?:e[\-+]?\d+)?)[0-9]/ig,
+			_relExp = /[\+-]=-?[\.\d]/,
+			//_nonNumbersExp = /(?:([\-+](?!(\d|=)))|[^\d\-+=e]|(e(?![\-+][\d])))+/ig,
+			_setRatio = function(v) {
+				var pt = this._firstPT,
+					min = 0.000001,
+					val;
+				while (pt) {
+					val = !pt.blob ? pt.c * v + pt.s : (v === 1 && this.end) ? this.end : v ? this.join("") : this.start;
+					if (pt.m) {
+						val = pt.m(val, this._target || pt.t);
+					} else if (val < min) if (val > -min && !pt.blob) { //prevents issues with converting very small numbers to strings in the browser
+						val = 0;
+					}
+					if (!pt.f) {
+						pt.t[pt.p] = val;
+					} else if (pt.fp) {
+						pt.t[pt.p](pt.fp, val);
+					} else {
+						pt.t[pt.p](val);
+					}
+					pt = pt._next;
+				}
+			},
+			//compares two strings (start/end), finds the numbers that are different and spits back an array representing the whole value but with the changing values isolated as elements. For example, "rgb(0,0,0)" and "rgb(100,50,0)" would become ["rgb(", 0, ",", 50, ",0)"]. Notice it merges the parts that are identical (performance optimization). The array also has a linked list of PropTweens attached starting with _firstPT that contain the tweening data (t, p, s, c, f, etc.). It also stores the starting value as a "start" property so that we can revert to it if/when necessary, like when a tween rewinds fully. If the quantity of numbers differs between the start and end, it will always prioritize the end value(s). The pt parameter is optional - it's for a PropTween that will be appended to the end of the linked list and is typically for actually setting the value after all of the elements have been updated (with array.join("")).
+			_blobDif = function(start, end, filter, pt) {
+				var a = [],
+					charIndex = 0,
+					s = "",
+					color = 0,
+					startNums, endNums, num, i, l, nonNumbers, currentNum;
+				a.start = start;
+				a.end = end;
+				start = a[0] = start + ""; //ensure values are strings
+				end = a[1] = end + "";
+				if (filter) {
+					filter(a); //pass an array with the starting and ending values and let the filter do whatever it needs to the values.
+					start = a[0];
+					end = a[1];
+				}
+				a.length = 0;
+				startNums = start.match(_numbersExp) || [];
+				endNums = end.match(_numbersExp) || [];
+				if (pt) {
+					pt._next = null;
+					pt.blob = 1;
+					a._firstPT = a._applyPT = pt; //apply last in the linked list (which means inserting it first)
+				}
+				l = endNums.length;
+				for (i = 0; i < l; i++) {
+					currentNum = endNums[i];
+					nonNumbers = end.substr(charIndex, end.indexOf(currentNum, charIndex)-charIndex);
+					s += (nonNumbers || !i) ? nonNumbers : ","; //note: SVG spec allows omission of comma/space when a negative sign is wedged between two numbers, like 2.5-5.3 instead of 2.5,-5.3 but when tweening, the negative value may switch to positive, so we insert the comma just in case.
+					charIndex += nonNumbers.length;
+					if (color) { //sense rgba() values and round them.
+						color = (color + 1) % 5;
+					} else if (nonNumbers.substr(-5) === "rgba(") {
+						color = 1;
+					}
+					if (currentNum === startNums[i] || startNums.length <= i) {
+						s += currentNum;
+					} else {
+						if (s) {
+							a.push(s);
+							s = "";
+						}
+						num = parseFloat(startNums[i]);
+						a.push(num);
+						a._firstPT = {_next: a._firstPT, t:a, p: a.length-1, s:num, c:((currentNum.charAt(1) === "=") ? parseInt(currentNum.charAt(0) + "1", 10) * parseFloat(currentNum.substr(2)) : (parseFloat(currentNum) - num)) || 0, f:0, m:(color && color < 4) ? Math.round : 0};
+						//note: we don't set _prev because we'll never need to remove individual PropTweens from this list.
+					}
+					charIndex += currentNum.length;
+				}
+				s += end.substr(charIndex);
+				if (s) {
+					a.push(s);
+				}
+				a.setRatio = _setRatio;
+				if (_relExp.test(end)) { //if the end string contains relative values, delete it so that on the final render (in _setRatio()), we don't actually set it to the string with += or -= characters (forces it to use the calculated value).
+					a.end = 0;
+				}
+				return a;
+			},
+			//note: "funcParam" is only necessary for function-based getters/setters that require an extra parameter like getAttribute("width") and setAttribute("width", value). In this example, funcParam would be "width". Used by AttrPlugin for example.
+			_addPropTween = function(target, prop, start, end, overwriteProp, mod, funcParam, stringFilter, index) {
+				if (typeof(end) === "function") {
+					end = end(index || 0, target);
+				}
+				var type = typeof(target[prop]),
+					getterName = (type !== "function") ? "" : ((prop.indexOf("set") || typeof(target["get" + prop.substr(3)]) !== "function") ? prop : "get" + prop.substr(3)),
+					s = (start !== "get") ? start : !getterName ? target[prop] : funcParam ? target[getterName](funcParam) : target[getterName](),
+					isRelative = (typeof(end) === "string" && end.charAt(1) === "="),
+					pt = {t:target, p:prop, s:s, f:(type === "function"), pg:0, n:overwriteProp || prop, m:(!mod ? 0 : (typeof(mod) === "function") ? mod : Math.round), pr:0, c:isRelative ? parseInt(end.charAt(0) + "1", 10) * parseFloat(end.substr(2)) : (parseFloat(end) - s) || 0},
+					blob;
+
+				if (typeof(s) !== "number" || (typeof(end) !== "number" && !isRelative)) {
+					if (funcParam || isNaN(s) || (!isRelative && isNaN(end)) || typeof(s) === "boolean" || typeof(end) === "boolean") {
+						//a blob (string that has multiple numbers in it)
+						pt.fp = funcParam;
+						blob = _blobDif(s, (isRelative ? parseFloat(pt.s) + pt.c : end), stringFilter || TweenLite.defaultStringFilter, pt);
+						pt = {t: blob, p: "setRatio", s: 0, c: 1, f: 2, pg: 0, n: overwriteProp || prop, pr: 0, m: 0}; //"2" indicates it's a Blob property tween. Needed for RoundPropsPlugin for example.
+					} else {
+						pt.s = parseFloat(s);
+						if (!isRelative) {
+							pt.c = (parseFloat(end) - pt.s) || 0;
+						}
+					}
+				}
+				if (pt.c) { //only add it to the linked list if there's a change.
+					if ((pt._next = this._firstPT)) {
+						pt._next._prev = pt;
+					}
+					this._firstPT = pt;
+					return pt;
+				}
+			},
+			_internals = TweenLite._internals = {isArray:_isArray, isSelector:_isSelector, lazyTweens:_lazyTweens, blobDif:_blobDif}, //gives us a way to expose certain private values to other GreenSock classes without contaminating tha main TweenLite object.
+			_plugins = TweenLite._plugins = {},
+			_tweenLookup = _internals.tweenLookup = {},
+			_tweenLookupNum = 0,
+			_reservedProps = _internals.reservedProps = {ease:1, delay:1, overwrite:1, onComplete:1, onCompleteParams:1, onCompleteScope:1, useFrames:1, runBackwards:1, startAt:1, onUpdate:1, onUpdateParams:1, onUpdateScope:1, onStart:1, onStartParams:1, onStartScope:1, onReverseComplete:1, onReverseCompleteParams:1, onReverseCompleteScope:1, onRepeat:1, onRepeatParams:1, onRepeatScope:1, easeParams:1, yoyo:1, immediateRender:1, repeat:1, repeatDelay:1, data:1, paused:1, reversed:1, autoCSS:1, lazy:1, onOverwrite:1, callbackScope:1, stringFilter:1, id:1, yoyoEase:1},
+			_overwriteLookup = {none:0, all:1, auto:2, concurrent:3, allOnStart:4, preexisting:5, "true":1, "false":0},
+			_rootFramesTimeline = Animation._rootFramesTimeline = new SimpleTimeline(),
+			_rootTimeline = Animation._rootTimeline = new SimpleTimeline(),
+			_nextGCFrame = 30,
+			_lazyRender = _internals.lazyRender = function() {
+				var i = _lazyTweens.length,
+					tween;
+				_lazyLookup = {};
+				while (--i > -1) {
+					tween = _lazyTweens[i];
+					if (tween && tween._lazy !== false) {
+						tween.render(tween._lazy[0], tween._lazy[1], true);
+						tween._lazy = false;
+					}
+				}
+				_lazyTweens.length = 0;
+			};
+
+		_rootTimeline._startTime = _ticker.time;
+		_rootFramesTimeline._startTime = _ticker.frame;
+		_rootTimeline._active = _rootFramesTimeline._active = true;
+		setTimeout(_lazyRender, 1); //on some mobile devices, there isn't a "tick" before code runs which means any lazy renders wouldn't run before the next official "tick".
+
+		Animation._updateRoot = TweenLite.render = function() {
+				var i, a, p;
+				if (_lazyTweens.length) { //if code is run outside of the requestAnimationFrame loop, there may be tweens queued AFTER the engine refreshed, so we need to ensure any pending renders occur before we refresh again.
+					_lazyRender();
+				}
+				_rootTimeline.render((_ticker.time - _rootTimeline._startTime) * _rootTimeline._timeScale, false, false);
+				_rootFramesTimeline.render((_ticker.frame - _rootFramesTimeline._startTime) * _rootFramesTimeline._timeScale, false, false);
+				if (_lazyTweens.length) {
+					_lazyRender();
+				}
+				if (_ticker.frame >= _nextGCFrame) { //dump garbage every 120 frames or whatever the user sets TweenLite.autoSleep to
+					_nextGCFrame = _ticker.frame + (parseInt(TweenLite.autoSleep, 10) || 120);
+					for (p in _tweenLookup) {
+						a = _tweenLookup[p].tweens;
+						i = a.length;
+						while (--i > -1) {
+							if (a[i]._gc) {
+								a.splice(i, 1);
+							}
+						}
+						if (a.length === 0) {
+							delete _tweenLookup[p];
+						}
+					}
+					//if there are no more tweens in the root timelines, or if they're all paused, make the _timer sleep to reduce load on the CPU slightly
+					p = _rootTimeline._first;
+					if (!p || p._paused) if (TweenLite.autoSleep && !_rootFramesTimeline._first && _ticker._listeners.tick.length === 1) {
+						while (p && p._paused) {
+							p = p._next;
+						}
+						if (!p) {
+							_ticker.sleep();
+						}
+					}
+				}
+			};
+
+		_ticker.addEventListener("tick", Animation._updateRoot);
+
+		var _register = function(target, tween, scrub) {
+				var id = target._gsTweenID, a, i;
+				if (!_tweenLookup[id || (target._gsTweenID = id = "t" + (_tweenLookupNum++))]) {
+					_tweenLookup[id] = {target:target, tweens:[]};
+				}
+				if (tween) {
+					a = _tweenLookup[id].tweens;
+					a[(i = a.length)] = tween;
+					if (scrub) {
+						while (--i > -1) {
+							if (a[i] === tween) {
+								a.splice(i, 1);
+							}
+						}
+					}
+				}
+				return _tweenLookup[id].tweens;
+			},
+			_onOverwrite = function(overwrittenTween, overwritingTween, target, killedProps) {
+				var func = overwrittenTween.vars.onOverwrite, r1, r2;
+				if (func) {
+					r1 = func(overwrittenTween, overwritingTween, target, killedProps);
+				}
+				func = TweenLite.onOverwrite;
+				if (func) {
+					r2 = func(overwrittenTween, overwritingTween, target, killedProps);
+				}
+				return (r1 !== false && r2 !== false);
+			},
+			_applyOverwrite = function(target, tween, props, mode, siblings) {
+				var i, changed, curTween, l;
+				if (mode === 1 || mode >= 4) {
+					l = siblings.length;
+					for (i = 0; i < l; i++) {
+						if ((curTween = siblings[i]) !== tween) {
+							if (!curTween._gc) {
+								if (curTween._kill(null, target, tween)) {
+									changed = true;
+								}
+							}
+						} else if (mode === 5) {
+							break;
+						}
+					}
+					return changed;
+				}
+				//NOTE: Add 0.0000000001 to overcome floating point errors that can cause the startTime to be VERY slightly off (when a tween's time() is set for example)
+				var startTime = tween._startTime + _tinyNum,
+					overlaps = [],
+					oCount = 0,
+					zeroDur = (tween._duration === 0),
+					globalStart;
+				i = siblings.length;
+				while (--i > -1) {
+					if ((curTween = siblings[i]) === tween || curTween._gc || curTween._paused) {
+						//ignore
+					} else if (curTween._timeline !== tween._timeline) {
+						globalStart = globalStart || _checkOverlap(tween, 0, zeroDur);
+						if (_checkOverlap(curTween, globalStart, zeroDur) === 0) {
+							overlaps[oCount++] = curTween;
+						}
+					} else if (curTween._startTime <= startTime) if (curTween._startTime + curTween.totalDuration() / curTween._timeScale > startTime) if (!((zeroDur || !curTween._initted) && startTime - curTween._startTime <= 0.0000000002)) {
+						overlaps[oCount++] = curTween;
+					}
+				}
+
+				i = oCount;
+				while (--i > -1) {
+					curTween = overlaps[i];
+					if (mode === 2) if (curTween._kill(props, target, tween)) {
+						changed = true;
+					}
+					if (mode !== 2 || (!curTween._firstPT && curTween._initted)) {
+						if (mode !== 2 && !_onOverwrite(curTween, tween)) {
+							continue;
+						}
+						if (curTween._enabled(false, false)) { //if all property tweens have been overwritten, kill the tween.
+							changed = true;
+						}
+					}
+				}
+				return changed;
+			},
+			_checkOverlap = function(tween, reference, zeroDur) {
+				var tl = tween._timeline,
+					ts = tl._timeScale,
+					t = tween._startTime;
+				while (tl._timeline) {
+					t += tl._startTime;
+					ts *= tl._timeScale;
+					if (tl._paused) {
+						return -100;
+					}
+					tl = tl._timeline;
+				}
+				t /= ts;
+				return (t > reference) ? t - reference : ((zeroDur && t === reference) || (!tween._initted && t - reference < 2 * _tinyNum)) ? _tinyNum : ((t += tween.totalDuration() / tween._timeScale / ts) > reference + _tinyNum) ? 0 : t - reference - _tinyNum;
+			};
+
+
+//---- TweenLite instance methods -----------------------------------------------------------------------------
+
+		p._init = function() {
+			var v = this.vars,
+				op = this._overwrittenProps,
+				dur = this._duration,
+				immediate = !!v.immediateRender,
+				ease = v.ease,
+				i, initPlugins, pt, p, startVars, l;
+			if (v.startAt) {
+				if (this._startAt) {
+					this._startAt.render(-1, true); //if we've run a startAt previously (when the tween instantiated), we should revert it so that the values re-instantiate correctly particularly for relative tweens. Without this, a TweenLite.fromTo(obj, 1, {x:"+=100"}, {x:"-=100"}), for example, would actually jump to +=200 because the startAt would run twice, doubling the relative change.
+					this._startAt.kill();
+				}
+				startVars = {};
+				for (p in v.startAt) { //copy the properties/values into a new object to avoid collisions, like var to = {x:0}, from = {x:500}; timeline.fromTo(e, 1, from, to).fromTo(e, 1, to, from);
+					startVars[p] = v.startAt[p];
+				}
+				startVars.overwrite = false;
+				startVars.immediateRender = true;
+				startVars.lazy = (immediate && v.lazy !== false);
+				startVars.startAt = startVars.delay = null; //no nesting of startAt objects allowed (otherwise it could cause an infinite loop).
+				startVars.onUpdate = v.onUpdate;
+				startVars.onUpdateScope = v.onUpdateScope || v.callbackScope || this;
+				this._startAt = TweenLite.to(this.target, 0, startVars);
+				if (immediate) {
+					if (this._time > 0) {
+						this._startAt = null; //tweens that render immediately (like most from() and fromTo() tweens) shouldn't revert when their parent timeline's playhead goes backward past the startTime because the initial render could have happened anytime and it shouldn't be directly correlated to this tween's startTime. Imagine setting up a complex animation where the beginning states of various objects are rendered immediately but the tween doesn't happen for quite some time - if we revert to the starting values as soon as the playhead goes backward past the tween's startTime, it will throw things off visually. Reversion should only happen in TimelineLite/Max instances where immediateRender was false (which is the default in the convenience methods like from()).
+					} else if (dur !== 0) {
+						return; //we skip initialization here so that overwriting doesn't occur until the tween actually begins. Otherwise, if you create several immediateRender:true tweens of the same target/properties to drop into a TimelineLite or TimelineMax, the last one created would overwrite the first ones because they didn't get placed into the timeline yet before the first render occurs and kicks in overwriting.
+					}
+				}
+			} else if (v.runBackwards && dur !== 0) {
+				//from() tweens must be handled uniquely: their beginning values must be rendered but we don't want overwriting to occur yet (when time is still 0). Wait until the tween actually begins before doing all the routines like overwriting. At that time, we should render at the END of the tween to ensure that things initialize correctly (remember, from() tweens go backwards)
+				if (this._startAt) {
+					this._startAt.render(-1, true);
+					this._startAt.kill();
+					this._startAt = null;
+				} else {
+					if (this._time !== 0) { //in rare cases (like if a from() tween runs and then is invalidate()-ed), immediateRender could be true but the initial forced-render gets skipped, so there's no need to force the render in this context when the _time is greater than 0
+						immediate = false;
+					}
+					pt = {};
+					for (p in v) { //copy props into a new object and skip any reserved props, otherwise onComplete or onUpdate or onStart could fire. We should, however, permit autoCSS to go through.
+						if (!_reservedProps[p] || p === "autoCSS") {
+							pt[p] = v[p];
+						}
+					}
+					pt.overwrite = 0;
+					pt.data = "isFromStart"; //we tag the tween with as "isFromStart" so that if [inside a plugin] we need to only do something at the very END of a tween, we have a way of identifying this tween as merely the one that's setting the beginning values for a "from()" tween. For example, clearProps in CSSPlugin should only get applied at the very END of a tween and without this tag, from(...{height:100, clearProps:"height", delay:1}) would wipe the height at the beginning of the tween and after 1 second, it'd kick back in.
+					pt.lazy = (immediate && v.lazy !== false);
+					pt.immediateRender = immediate; //zero-duration tweens render immediately by default, but if we're not specifically instructed to render this tween immediately, we should skip this and merely _init() to record the starting values (rendering them immediately would push them to completion which is wasteful in that case - we'd have to render(-1) immediately after)
+					this._startAt = TweenLite.to(this.target, 0, pt);
+					if (!immediate) {
+						this._startAt._init(); //ensures that the initial values are recorded
+						this._startAt._enabled(false); //no need to have the tween render on the next cycle. Disable it because we'll always manually control the renders of the _startAt tween.
+						if (this.vars.immediateRender) {
+							this._startAt = null;
+						}
+					} else if (this._time === 0) {
+						return;
+					}
+				}
+			}
+			this._ease = ease = (!ease) ? TweenLite.defaultEase : (ease instanceof Ease) ? ease : (typeof(ease) === "function") ? new Ease(ease, v.easeParams) : _easeMap[ease] || TweenLite.defaultEase;
+			if (v.easeParams instanceof Array && ease.config) {
+				this._ease = ease.config.apply(ease, v.easeParams);
+			}
+			this._easeType = this._ease._type;
+			this._easePower = this._ease._power;
+			this._firstPT = null;
+
+			if (this._targets) {
+				l = this._targets.length;
+				for (i = 0; i < l; i++) {
+					if ( this._initProps( this._targets[i], (this._propLookup[i] = {}), this._siblings[i], (op ? op[i] : null), i) ) {
+						initPlugins = true;
+					}
+				}
+			} else {
+				initPlugins = this._initProps(this.target, this._propLookup, this._siblings, op, 0);
+			}
+
+			if (initPlugins) {
+				TweenLite._onPluginEvent("_onInitAllProps", this); //reorders the array in order of priority. Uses a static TweenPlugin method in order to minimize file size in TweenLite
+			}
+			if (op) if (!this._firstPT) if (typeof(this.target) !== "function") { //if all tweening properties have been overwritten, kill the tween. If the target is a function, it's probably a delayedCall so let it live.
+				this._enabled(false, false);
+			}
+			if (v.runBackwards) {
+				pt = this._firstPT;
+				while (pt) {
+					pt.s += pt.c;
+					pt.c = -pt.c;
+					pt = pt._next;
+				}
+			}
+			this._onUpdate = v.onUpdate;
+			this._initted = true;
+		};
+
+		p._initProps = function(target, propLookup, siblings, overwrittenProps, index) {
+			var p, i, initPlugins, plugin, pt, v;
+			if (target == null) {
+				return false;
+			}
+
+			if (_lazyLookup[target._gsTweenID]) {
+				_lazyRender(); //if other tweens of the same target have recently initted but haven't rendered yet, we've got to force the render so that the starting values are correct (imagine populating a timeline with a bunch of sequential tweens and then jumping to the end)
+			}
+
+			if (!this.vars.css) if (target.style) if (target !== window && target.nodeType) if (_plugins.css) if (this.vars.autoCSS !== false) { //it's so common to use TweenLite/Max to animate the css of DOM elements, we assume that if the target is a DOM element, that's what is intended (a convenience so that users don't have to wrap things in css:{}, although we still recommend it for a slight performance boost and better specificity). Note: we cannot check "nodeType" on the window inside an iframe.
+				_autoCSS(this.vars, target);
+			}
+			for (p in this.vars) {
+				v = this.vars[p];
+				if (_reservedProps[p]) {
+					if (v) if ((v instanceof Array) || (v.push && _isArray(v))) if (v.join("").indexOf("{self}") !== -1) {
+						this.vars[p] = v = this._swapSelfInParams(v, this);
+					}
+
+				} else if (_plugins[p] && (plugin = new _plugins[p]())._onInitTween(target, this.vars[p], this, index)) {
+
+					//t - target 		[object]
+					//p - property 		[string]
+					//s - start			[number]
+					//c - change		[number]
+					//f - isFunction	[boolean]
+					//n - name			[string]
+					//pg - isPlugin 	[boolean]
+					//pr - priority		[number]
+					//m - mod           [function | 0]
+					this._firstPT = pt = {_next:this._firstPT, t:plugin, p:"setRatio", s:0, c:1, f:1, n:p, pg:1, pr:plugin._priority, m:0};
+					i = plugin._overwriteProps.length;
+					while (--i > -1) {
+						propLookup[plugin._overwriteProps[i]] = this._firstPT;
+					}
+					if (plugin._priority || plugin._onInitAllProps) {
+						initPlugins = true;
+					}
+					if (plugin._onDisable || plugin._onEnable) {
+						this._notifyPluginsOfEnabled = true;
+					}
+					if (pt._next) {
+						pt._next._prev = pt;
+					}
+
+				} else {
+					propLookup[p] = _addPropTween.call(this, target, p, "get", v, p, 0, null, this.vars.stringFilter, index);
+				}
+			}
+
+			if (overwrittenProps) if (this._kill(overwrittenProps, target)) { //another tween may have tried to overwrite properties of this tween before init() was called (like if two tweens start at the same time, the one created second will run first)
+				return this._initProps(target, propLookup, siblings, overwrittenProps, index);
+			}
+			if (this._overwrite > 1) if (this._firstPT) if (siblings.length > 1) if (_applyOverwrite(target, this, propLookup, this._overwrite, siblings)) {
+				this._kill(propLookup, target);
+				return this._initProps(target, propLookup, siblings, overwrittenProps, index);
+			}
+			if (this._firstPT) if ((this.vars.lazy !== false && this._duration) || (this.vars.lazy && !this._duration)) { //zero duration tweens don't lazy render by default; everything else does.
+				_lazyLookup[target._gsTweenID] = true;
+			}
+			return initPlugins;
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			var prevTime = this._time,
+				duration = this._duration,
+				prevRawPrevTime = this._rawPrevTime,
+				isComplete, callback, pt, rawPrevTime;
+			if (time >= duration - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				this._totalTime = this._time = duration;
+				this.ratio = this._ease._calcEnd ? this._ease.getRatio(1) : 1;
+				if (!this._reversed ) {
+					isComplete = true;
+					callback = "onComplete";
+					force = (force || this._timeline.autoRemoveChildren); //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+				}
+				if (duration === 0) if (this._initted || !this.vars.lazy || force) { //zero-duration tweens are tricky because we must discern the momentum/direction of time in order to determine whether the starting values should be rendered or the ending values. If the "playhead" of its timeline goes past the zero-duration tween in the forward direction or lands directly on it, the end values should be rendered, but if the timeline's "playhead" moves past it in the backward direction (from a postitive time to a negative time), the starting values must be rendered.
+					if (this._startTime === this._timeline._duration) { //if a zero-duration tween is at the VERY end of a timeline and that timeline renders at its end, it will typically add a tiny bit of cushion to the render time to prevent rounding errors from getting in the way of tweens rendering their VERY end. If we then reverse() that timeline, the zero-duration tween will trigger its onReverseComplete even though technically the playhead didn't pass over it again. It's a very specific edge case we must accommodate.
+						time = 0;
+					}
+					if (prevRawPrevTime < 0 || (time <= 0 && time >= -0.0000001) || (prevRawPrevTime === _tinyNum && this.data !== "isPause")) if (prevRawPrevTime !== time) { //note: when this.data is "isPause", it's a callback added by addPause() on a timeline that we should not be triggered when LEAVING its exact start time. In other words, tl.addPause(1).play(1) shouldn't pause.
+						force = true;
+						if (prevRawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+					this._rawPrevTime = rawPrevTime = (!suppressEvents || time || prevRawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				}
+
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				this._totalTime = this._time = 0;
+				this.ratio = this._ease._calcEnd ? this._ease.getRatio(0) : 0;
+				if (prevTime !== 0 || (duration === 0 && prevRawPrevTime > 0)) {
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (duration === 0) if (this._initted || !this.vars.lazy || force) { //zero-duration tweens are tricky because we must discern the momentum/direction of time in order to determine whether the starting values should be rendered or the ending values. If the "playhead" of its timeline goes past the zero-duration tween in the forward direction or lands directly on it, the end values should be rendered, but if the timeline's "playhead" moves past it in the backward direction (from a postitive time to a negative time), the starting values must be rendered.
+						if (prevRawPrevTime >= 0 && !(prevRawPrevTime === _tinyNum && this.data === "isPause")) {
+							force = true;
+						}
+						this._rawPrevTime = rawPrevTime = (!suppressEvents || time || prevRawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					}
+				}
+				if (!this._initted || (this._startAt && this._startAt.progress())) { //if we render the very beginning (time == 0) of a fromTo(), we must force the render (normal tweens wouldn't need to render at a time of 0 when the prevTime was also 0). This is also mandatory to make sure overwriting kicks in immediately. Also, we check progress() because if startAt has already rendered at its end, we should force a render at its beginning. Otherwise, if you put the playhead directly on top of where a fromTo({immediateRender:false}) starts, and then move it backwards, the from() won't revert its values.
+					force = true;
+				}
+			} else {
+				this._totalTime = this._time = time;
+
+				if (this._easeType) {
+					var r = time / duration, type = this._easeType, pow = this._easePower;
+					if (type === 1 || (type === 3 && r >= 0.5)) {
+						r = 1 - r;
+					}
+					if (type === 3) {
+						r *= 2;
+					}
+					if (pow === 1) {
+						r *= r;
+					} else if (pow === 2) {
+						r *= r * r;
+					} else if (pow === 3) {
+						r *= r * r * r;
+					} else if (pow === 4) {
+						r *= r * r * r * r;
+					}
+
+					if (type === 1) {
+						this.ratio = 1 - r;
+					} else if (type === 2) {
+						this.ratio = r;
+					} else if (time / duration < 0.5) {
+						this.ratio = r / 2;
+					} else {
+						this.ratio = 1 - (r / 2);
+					}
+
+				} else {
+					this.ratio = this._ease.getRatio(time / duration);
+				}
+			}
+
+			if (this._time === prevTime && !force) {
+				return;
+			} else if (!this._initted) {
+				this._init();
+				if (!this._initted || this._gc) { //immediateRender tweens typically won't initialize until the playhead advances (_time is greater than 0) in order to ensure that overwriting occurs properly. Also, if all of the tweening properties have been overwritten (which would cause _gc to be true, as set in _init()), we shouldn't continue otherwise an onStart callback could be called for example.
+					return;
+				} else if (!force && this._firstPT && ((this.vars.lazy !== false && this._duration) || (this.vars.lazy && !this._duration))) {
+					this._time = this._totalTime = prevTime;
+					this._rawPrevTime = prevRawPrevTime;
+					_lazyTweens.push(this);
+					this._lazy = [time, suppressEvents];
+					return;
+				}
+				//_ease is initially set to defaultEase, so now that init() has run, _ease is set properly and we need to recalculate the ratio. Overall this is faster than using conditional logic earlier in the method to avoid having to set ratio twice because we only init() once but renderTime() gets called VERY frequently.
+				if (this._time && !isComplete) {
+					this.ratio = this._ease.getRatio(this._time / duration);
+				} else if (isComplete && this._ease._calcEnd) {
+					this.ratio = this._ease.getRatio((this._time === 0) ? 0 : 1);
+				}
+			}
+			if (this._lazy !== false) { //in case a lazy render is pending, we should flush it because the new render is occurring now (imagine a lazy tween instantiating and then immediately the user calls tween.seek(tween.duration()), skipping to the end - the end render would be forced, and then if we didn't flush the lazy render, it'd fire AFTER the seek(), rendering it at the wrong time.
+				this._lazy = false;
+			}
+			if (!this._active) if (!this._paused && this._time !== prevTime && time >= 0) {
+				this._active = true;  //so that if the user renders a tween (as opposed to the timeline rendering it), the timeline is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the tween already finished but the user manually re-renders it as halfway done.
+			}
+			if (prevTime === 0) {
+				if (this._startAt) {
+					if (time >= 0) {
+						this._startAt.render(time, suppressEvents, force);
+					} else if (!callback) {
+						callback = "_dummyGS"; //if no callback is defined, use a dummy value just so that the condition at the end evaluates as true because _startAt should render AFTER the normal render loop when the time is negative. We could handle this in a more intuitive way, of course, but the render loop is the MOST important thing to optimize, so this technique allows us to avoid adding extra conditional logic in a high-frequency area.
+					}
+				}
+				if (this.vars.onStart) if (this._time !== 0 || duration === 0) if (!suppressEvents) {
+					this._callback("onStart");
+				}
+			}
+			pt = this._firstPT;
+			while (pt) {
+				if (pt.f) {
+					pt.t[pt.p](pt.c * this.ratio + pt.s);
+				} else {
+					pt.t[pt.p] = pt.c * this.ratio + pt.s;
+				}
+				pt = pt._next;
+			}
+
+			if (this._onUpdate) {
+				if (time < 0) if (this._startAt && time !== -0.0001) { //if the tween is positioned at the VERY beginning (_startTime 0) of its parent timeline, it's illegal for the playhead to go back further, so we should not render the recorded startAt values.
+					this._startAt.render(time, suppressEvents, force); //note: for performance reasons, we tuck this conditional logic inside less traveled areas (most tweens don't have an onUpdate). We'd just have it at the end before the onComplete, but the values should be updated before any onUpdate is called, so we ALSO put it here and then if it's not called, we do so later near the onComplete.
+				}
+				if (!suppressEvents) if (this._time !== prevTime || isComplete || force) {
+					this._callback("onUpdate");
+				}
+			}
+			if (callback) if (!this._gc || force) { //check _gc because there's a chance that kill() could be called in an onUpdate
+				if (time < 0 && this._startAt && !this._onUpdate && time !== -0.0001) { //-0.0001 is a special value that we use when looping back to the beginning of a repeated TimelineMax, in which case we shouldn't render the _startAt values.
+					this._startAt.render(time, suppressEvents, force);
+				}
+				if (isComplete) {
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+				if (duration === 0 && this._rawPrevTime === _tinyNum && rawPrevTime !== _tinyNum) { //the onComplete or onReverseComplete could trigger movement of the playhead and for zero-duration tweens (which must discern direction) that land directly back on their start time, we don't want to fire again on the next render. Think of several addPause()'s in a timeline that forces the playhead to a certain spot, but what if it's already paused and another tween is tweening the "time" of the timeline? Each time it moves [forward] past that spot, it would move back, and since suppressEvents is true, it'd reset _rawPrevTime to _tinyNum so that when it begins again, the callback would fire (so ultimately it could bounce back and forth during that tween). Again, this is a very uncommon scenario, but possible nonetheless.
+					this._rawPrevTime = 0;
+				}
+			}
+		};
+
+		p._kill = function(vars, target, overwritingTween) {
+			if (vars === "all") {
+				vars = null;
+			}
+			if (vars == null) if (target == null || target === this.target) {
+				this._lazy = false;
+				return this._enabled(false, false);
+			}
+			target = (typeof(target) !== "string") ? (target || this._targets || this.target) : TweenLite.selector(target) || target;
+			var simultaneousOverwrite = (overwritingTween && this._time && overwritingTween._startTime === this._startTime && this._timeline === overwritingTween._timeline),
+				i, overwrittenProps, p, pt, propLookup, changed, killProps, record, killed;
+			if ((_isArray(target) || _isSelector(target)) && typeof(target[0]) !== "number") {
+				i = target.length;
+				while (--i > -1) {
+					if (this._kill(vars, target[i], overwritingTween)) {
+						changed = true;
+					}
+				}
+			} else {
+				if (this._targets) {
+					i = this._targets.length;
+					while (--i > -1) {
+						if (target === this._targets[i]) {
+							propLookup = this._propLookup[i] || {};
+							this._overwrittenProps = this._overwrittenProps || [];
+							overwrittenProps = this._overwrittenProps[i] = vars ? this._overwrittenProps[i] || {} : "all";
+							break;
+						}
+					}
+				} else if (target !== this.target) {
+					return false;
+				} else {
+					propLookup = this._propLookup;
+					overwrittenProps = this._overwrittenProps = vars ? this._overwrittenProps || {} : "all";
+				}
+
+				if (propLookup) {
+					killProps = vars || propLookup;
+					record = (vars !== overwrittenProps && overwrittenProps !== "all" && vars !== propLookup && (typeof(vars) !== "object" || !vars._tempKill)); //_tempKill is a super-secret way to delete a particular tweening property but NOT have it remembered as an official overwritten property (like in BezierPlugin)
+					if (overwritingTween && (TweenLite.onOverwrite || this.vars.onOverwrite)) {
+						for (p in killProps) {
+							if (propLookup[p]) {
+								if (!killed) {
+									killed = [];
+								}
+								killed.push(p);
+							}
+						}
+						if ((killed || !vars) && !_onOverwrite(this, overwritingTween, target, killed)) { //if the onOverwrite returned false, that means the user wants to override the overwriting (cancel it).
+							return false;
+						}
+					}
+
+					for (p in killProps) {
+						if ((pt = propLookup[p])) {
+							if (simultaneousOverwrite) { //if another tween overwrites this one and they both start at exactly the same time, yet this tween has already rendered once (for example, at 0.001) because it's first in the queue, we should revert the values to where they were at 0 so that the starting values aren't contaminated on the overwriting tween.
+								if (pt.f) {
+									pt.t[pt.p](pt.s);
+								} else {
+									pt.t[pt.p] = pt.s;
+								}
+								changed = true;
+							}
+							if (pt.pg && pt.t._kill(killProps)) {
+								changed = true; //some plugins need to be notified so they can perform cleanup tasks first
+							}
+							if (!pt.pg || pt.t._overwriteProps.length === 0) {
+								if (pt._prev) {
+									pt._prev._next = pt._next;
+								} else if (pt === this._firstPT) {
+									this._firstPT = pt._next;
+								}
+								if (pt._next) {
+									pt._next._prev = pt._prev;
+								}
+								pt._next = pt._prev = null;
+							}
+							delete propLookup[p];
+						}
+						if (record) {
+							overwrittenProps[p] = 1;
+						}
+					}
+					if (!this._firstPT && this._initted) { //if all tweening properties are killed, kill the tween. Without this line, if there's a tween with multiple targets and then you killTweensOf() each target individually, the tween would technically still remain active and fire its onComplete even though there aren't any more properties tweening.
+						this._enabled(false, false);
+					}
+				}
+			}
+			return changed;
+		};
+
+		p.invalidate = function() {
+			if (this._notifyPluginsOfEnabled) {
+				TweenLite._onPluginEvent("_onDisable", this);
+			}
+			this._firstPT = this._overwrittenProps = this._startAt = this._onUpdate = null;
+			this._notifyPluginsOfEnabled = this._active = this._lazy = false;
+			this._propLookup = (this._targets) ? {} : [];
+			Animation.prototype.invalidate.call(this);
+			if (this.vars.immediateRender) {
+				this._time = -_tinyNum; //forces a render without having to set the render() "force" parameter to true because we want to allow lazying by default (using the "force" parameter always forces an immediate full render)
+				this.render(Math.min(0, -this._delay)); //in case delay is negative.
+			}
+			return this;
+		};
+
+		p._enabled = function(enabled, ignoreTimeline) {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			if (enabled && this._gc) {
+				var targets = this._targets,
+					i;
+				if (targets) {
+					i = targets.length;
+					while (--i > -1) {
+						this._siblings[i] = _register(targets[i], this, true);
+					}
+				} else {
+					this._siblings = _register(this.target, this, true);
+				}
+			}
+			Animation.prototype._enabled.call(this, enabled, ignoreTimeline);
+			if (this._notifyPluginsOfEnabled) if (this._firstPT) {
+				return TweenLite._onPluginEvent((enabled ? "_onEnable" : "_onDisable"), this);
+			}
+			return false;
+		};
+
+
+//----TweenLite static methods -----------------------------------------------------
+
+		TweenLite.to = function(target, duration, vars) {
+			return new TweenLite(target, duration, vars);
+		};
+
+		TweenLite.from = function(target, duration, vars) {
+			vars.runBackwards = true;
+			vars.immediateRender = (vars.immediateRender != false);
+			return new TweenLite(target, duration, vars);
+		};
+
+		TweenLite.fromTo = function(target, duration, fromVars, toVars) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return new TweenLite(target, duration, toVars);
+		};
+
+		TweenLite.delayedCall = function(delay, callback, params, scope, useFrames) {
+			return new TweenLite(callback, 0, {delay:delay, onComplete:callback, onCompleteParams:params, callbackScope:scope, onReverseComplete:callback, onReverseCompleteParams:params, immediateRender:false, lazy:false, useFrames:useFrames, overwrite:0});
+		};
+
+		TweenLite.set = function(target, vars) {
+			return new TweenLite(target, 0, vars);
+		};
+
+		TweenLite.getTweensOf = function(target, onlyActive) {
+			if (target == null) { return []; }
+			target = (typeof(target) !== "string") ? target : TweenLite.selector(target) || target;
+			var i, a, j, t;
+			if ((_isArray(target) || _isSelector(target)) && typeof(target[0]) !== "number") {
+				i = target.length;
+				a = [];
+				while (--i > -1) {
+					a = a.concat(TweenLite.getTweensOf(target[i], onlyActive));
+				}
+				i = a.length;
+				//now get rid of any duplicates (tweens of arrays of objects could cause duplicates)
+				while (--i > -1) {
+					t = a[i];
+					j = i;
+					while (--j > -1) {
+						if (t === a[j]) {
+							a.splice(i, 1);
+						}
+					}
+				}
+			} else if (target._gsTweenID) {
+				a = _register(target).concat();
+				i = a.length;
+				while (--i > -1) {
+					if (a[i]._gc || (onlyActive && !a[i].isActive())) {
+						a.splice(i, 1);
+					}
+				}
+			}
+			return a || [];
+		};
+
+		TweenLite.killTweensOf = TweenLite.killDelayedCallsTo = function(target, onlyActive, vars) {
+			if (typeof(onlyActive) === "object") {
+				vars = onlyActive; //for backwards compatibility (before "onlyActive" parameter was inserted)
+				onlyActive = false;
+			}
+			var a = TweenLite.getTweensOf(target, onlyActive),
+				i = a.length;
+			while (--i > -1) {
+				a[i]._kill(vars, target);
+			}
+		};
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * TweenPlugin   (could easily be split out as a separate file/class, but included for ease of use (so that people don't need to include another script call before loading plugins which is easy to forget)
+ * ----------------------------------------------------------------
+ */
+		var TweenPlugin = _class("plugins.TweenPlugin", function(props, priority) {
+					this._overwriteProps = (props || "").split(",");
+					this._propName = this._overwriteProps[0];
+					this._priority = priority || 0;
+					this._super = TweenPlugin.prototype;
+				}, true);
+
+		p = TweenPlugin.prototype;
+		TweenPlugin.version = "1.19.0";
+		TweenPlugin.API = 2;
+		p._firstPT = null;
+		p._addTween = _addPropTween;
+		p.setRatio = _setRatio;
+
+		p._kill = function(lookup) {
+			var a = this._overwriteProps,
+				pt = this._firstPT,
+				i;
+			if (lookup[this._propName] != null) {
+				this._overwriteProps = [];
+			} else {
+				i = a.length;
+				while (--i > -1) {
+					if (lookup[a[i]] != null) {
+						a.splice(i, 1);
+					}
+				}
+			}
+			while (pt) {
+				if (lookup[pt.n] != null) {
+					if (pt._next) {
+						pt._next._prev = pt._prev;
+					}
+					if (pt._prev) {
+						pt._prev._next = pt._next;
+						pt._prev = null;
+					} else if (this._firstPT === pt) {
+						this._firstPT = pt._next;
+					}
+				}
+				pt = pt._next;
+			}
+			return false;
+		};
+
+		p._mod = p._roundProps = function(lookup) {
+			var pt = this._firstPT,
+				val;
+			while (pt) {
+				val = lookup[this._propName] || (pt.n != null && lookup[ pt.n.split(this._propName + "_").join("") ]);
+				if (val && typeof(val) === "function") { //some properties that are very plugin-specific add a prefix named after the _propName plus an underscore, so we need to ignore that extra stuff here.
+					if (pt.f === 2) {
+						pt.t._applyPT.m = val;
+					} else {
+						pt.m = val;
+					}
+				}
+				pt = pt._next;
+			}
+		};
+
+		TweenLite._onPluginEvent = function(type, tween) {
+			var pt = tween._firstPT,
+				changed, pt2, first, last, next;
+			if (type === "_onInitAllProps") {
+				//sorts the PropTween linked list in order of priority because some plugins need to render earlier/later than others, like MotionBlurPlugin applies its effects after all x/y/alpha tweens have rendered on each frame.
+				while (pt) {
+					next = pt._next;
+					pt2 = first;
+					while (pt2 && pt2.pr > pt.pr) {
+						pt2 = pt2._next;
+					}
+					if ((pt._prev = pt2 ? pt2._prev : last)) {
+						pt._prev._next = pt;
+					} else {
+						first = pt;
+					}
+					if ((pt._next = pt2)) {
+						pt2._prev = pt;
+					} else {
+						last = pt;
+					}
+					pt = next;
+				}
+				pt = tween._firstPT = first;
+			}
+			while (pt) {
+				if (pt.pg) if (typeof(pt.t[type]) === "function") if (pt.t[type]()) {
+					changed = true;
+				}
+				pt = pt._next;
+			}
+			return changed;
+		};
+
+		TweenPlugin.activate = function(plugins) {
+			var i = plugins.length;
+			while (--i > -1) {
+				if (plugins[i].API === TweenPlugin.API) {
+					_plugins[(new plugins[i]())._propName] = plugins[i];
+				}
+			}
+			return true;
+		};
+
+		//provides a more concise way to define plugins that have no dependencies besides TweenPlugin and TweenLite, wrapping common boilerplate stuff into one function (added in 1.9.0). You don't NEED to use this to define a plugin - the old way still works and can be useful in certain (rare) situations.
+		_gsDefine.plugin = function(config) {
+			if (!config || !config.propName || !config.init || !config.API) { throw "illegal plugin definition."; }
+			var propName = config.propName,
+				priority = config.priority || 0,
+				overwriteProps = config.overwriteProps,
+				map = {init:"_onInitTween", set:"setRatio", kill:"_kill", round:"_mod", mod:"_mod", initAll:"_onInitAllProps"},
+				Plugin = _class("plugins." + propName.charAt(0).toUpperCase() + propName.substr(1) + "Plugin",
+					function() {
+						TweenPlugin.call(this, propName, priority);
+						this._overwriteProps = overwriteProps || [];
+					}, (config.global === true)),
+				p = Plugin.prototype = new TweenPlugin(propName),
+				prop;
+			p.constructor = Plugin;
+			Plugin.API = config.API;
+			for (prop in map) {
+				if (typeof(config[prop]) === "function") {
+					p[map[prop]] = config[prop];
+				}
+			}
+			Plugin.version = config.version;
+			TweenPlugin.activate([Plugin]);
+			return Plugin;
+		};
+
+
+		//now run through all the dependencies discovered and if any are missing, log that to the console as a warning. This is why it's best to have TweenLite load last - it can check all the dependencies for you.
+		a = window._gsQueue;
+		if (a) {
+			for (i = 0; i < a.length; i++) {
+				a[i]();
+			}
+			for (p in _defLookup) {
+				if (!_defLookup[p].func) {
+					window.console.log("GSAP encountered missing dependency: " + p);
+				}
+			}
+		}
+
+		_tickerActive = false; //ensures that the first official animation forces a ticker.tick() to update the time when it is instantiated
+
+})((typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window, "TweenLite");
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2)))
+
+/***/ }),
+/* 2 */
+/***/ (function(module, exports) {
+
+var g;
+
+// This works in non-strict mode
+g = (function() {
+	return this;
+})();
+
+try {
+	// This works if eval is allowed (see CSP)
+	g = g || Function("return this")() || (1,eval)("this");
+} catch(e) {
+	// This works if the window reference is available
+	if(typeof window === "object")
+		g = window;
+}
+
+// g can still be undefined, but nothing to do about it...
+// We return undefined, instead of nothing here, so it's
+// easier to handle this case. if(!global) { ...}
+
+module.exports = g;
+
+
+/***/ }),
+/* 3 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ *
+ * Vignette shader
+ * based on PaintEffect postprocess from ro.me
+ * http://code.google.com/p/3-dreams-of-black/source/browse/deploy/js/effects/PaintEffect.js
+ */
+
+THREE.VignetteShader = {
+
+	uniforms: {
+
+		"tDiffuse": { value: null },
+		"offset":   { value: 1.0 },
+		"darkness": { value: 1.0 }
+
+	},
+
+	vertexShader: [
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vUv = uv;",
+			"gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+
+		"}"
+
+	].join( "\n" ),
+
+	fragmentShader: [
+
+		"uniform float offset;",
+		"uniform float darkness;",
+
+		"uniform sampler2D tDiffuse;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			// Eskil's vignette
+
+			"vec4 texel = texture2D( tDiffuse, vUv );",
+			"vec2 uv = ( vUv - vec2( 0.5 ) ) * vec2( offset );",
+			"gl_FragColor = vec4( mix( texel.rgb, vec3( 1.0 - darkness ), dot( uv, uv ) ), texel.a );",
+
+			/*
+			// alternative version from glfx.js
+			// this one makes more "dusty" look (as opposed to "burned")
+
+			"vec4 color = texture2D( tDiffuse, vUv );",
+			"float dist = distance( vUv, vec2( 0.5 ) );",
+			"color.rgb *= smoothstep( 0.8, offset * 0.799, dist *( darkness + offset ) );",
+			"gl_FragColor = color;",
+			*/
+
+		"}"
+
+	].join( "\n" )
+
+};
+
+
+
+/***/ }),
+/* 4 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ *
+ * Full-screen textured quad shader
+ */
+
+THREE.CopyShader = {
+
+	uniforms: {
+
+		"tDiffuse": { value: null },
+		"opacity":  { value: 1.0 }
+
+	},
+
+	vertexShader: [
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vUv = uv;",
+			"gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+
+		"}"
+
+	].join( "\n" ),
+
+	fragmentShader: [
+
+		"uniform float opacity;",
+
+		"uniform sampler2D tDiffuse;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vec4 texel = texture2D( tDiffuse, vUv );",
+			"gl_FragColor = opacity * texel;",
+
+		"}"
+
+	].join( "\n" )
+
+};
+
+
+
+/***/ }),
+/* 5 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+THREE.EffectComposer = function ( renderer, renderTarget ) {
+
+	this.renderer = renderer;
+
+	if ( renderTarget === undefined ) {
+
+		var parameters = {
+			minFilter: THREE.LinearFilter,
+			magFilter: THREE.LinearFilter,
+			format: THREE.RGBAFormat,
+			stencilBuffer: false
+		};
+
+		var size = renderer.getSize();
+		renderTarget = new THREE.WebGLRenderTarget( size.width, size.height, parameters );
+		renderTarget.texture.name = 'EffectComposer.rt1';
+
+	}
+
+	this.renderTarget1 = renderTarget;
+	this.renderTarget2 = renderTarget.clone();
+	this.renderTarget2.texture.name = 'EffectComposer.rt2';
+
+	this.writeBuffer = this.renderTarget1;
+	this.readBuffer = this.renderTarget2;
+
+	this.passes = [];
+
+	// dependencies
+
+	if ( THREE.CopyShader === undefined ) {
+
+		console.error( 'THREE.EffectComposer relies on THREE.CopyShader' );
+
+	}
+
+	if ( THREE.ShaderPass === undefined ) {
+
+		console.error( 'THREE.EffectComposer relies on THREE.ShaderPass' );
+
+	}
+
+	this.copyPass = new THREE.ShaderPass( THREE.CopyShader );
+
+};
+
+Object.assign( THREE.EffectComposer.prototype, {
+
+	swapBuffers: function() {
+
+		var tmp = this.readBuffer;
+		this.readBuffer = this.writeBuffer;
+		this.writeBuffer = tmp;
+
+	},
+
+	addPass: function ( pass ) {
+
+		this.passes.push( pass );
+
+		var size = this.renderer.getSize();
+		pass.setSize( size.width, size.height );
+
+	},
+
+	insertPass: function ( pass, index ) {
+
+		this.passes.splice( index, 0, pass );
+
+	},
+
+	render: function ( delta ) {
+
+		var maskActive = false;
+
+		var pass, i, il = this.passes.length;
+
+		for ( i = 0; i < il; i ++ ) {
+
+			pass = this.passes[ i ];
+
+			if ( pass.enabled === false ) continue;
+
+			pass.render( this.renderer, this.writeBuffer, this.readBuffer, delta, maskActive );
+
+			if ( pass.needsSwap ) {
+
+				if ( maskActive ) {
+
+					var context = this.renderer.context;
+
+					context.stencilFunc( context.NOTEQUAL, 1, 0xffffffff );
+
+					this.copyPass.render( this.renderer, this.writeBuffer, this.readBuffer, delta );
+
+					context.stencilFunc( context.EQUAL, 1, 0xffffffff );
+
+				}
+
+				this.swapBuffers();
+
+			}
+
+			if ( THREE.MaskPass !== undefined ) {
+
+				if ( pass instanceof THREE.MaskPass ) {
+
+					maskActive = true;
+
+				} else if ( pass instanceof THREE.ClearMaskPass ) {
+
+					maskActive = false;
+
+				}
+
+			}
+
+		}
+
+	},
+
+	reset: function ( renderTarget ) {
+
+		if ( renderTarget === undefined ) {
+
+			var size = this.renderer.getSize();
+
+			renderTarget = this.renderTarget1.clone();
+			renderTarget.setSize( size.width, size.height );
+
+		}
+
+		this.renderTarget1.dispose();
+		this.renderTarget2.dispose();
+		this.renderTarget1 = renderTarget;
+		this.renderTarget2 = renderTarget.clone();
+
+		this.writeBuffer = this.renderTarget1;
+		this.readBuffer = this.renderTarget2;
+
+	},
+
+	setSize: function ( width, height ) {
+
+		this.renderTarget1.setSize( width, height );
+		this.renderTarget2.setSize( width, height );
+
+		for ( var i = 0; i < this.passes.length; i ++ ) {
+
+			this.passes[i].setSize( width, height );
+
+		}
+
+	}
+
+} );
+
+
+THREE.Pass = function () {
+
+	// if set to true, the pass is processed by the composer
+	this.enabled = true;
+
+	// if set to true, the pass indicates to swap read and write buffer after rendering
+	this.needsSwap = true;
+
+	// if set to true, the pass clears its buffer before rendering
+	this.clear = false;
+
+	// if set to true, the result of the pass is rendered to screen
+	this.renderToScreen = false;
+
+};
+
+Object.assign( THREE.Pass.prototype, {
+
+	setSize: function( width, height ) {},
+
+	render: function ( renderer, writeBuffer, readBuffer, delta, maskActive ) {
+
+		console.error( 'THREE.Pass: .render() must be implemented in derived pass.' );
+
+	}
+
+} );
+
+
+
+/***/ }),
+/* 6 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+THREE.RenderPass = function ( scene, camera, overrideMaterial, clearColor, clearAlpha ) {
+
+	THREE.Pass.call( this );
+
+	this.scene = scene;
+	this.camera = camera;
+
+	this.overrideMaterial = overrideMaterial;
+
+	this.clearColor = clearColor;
+	this.clearAlpha = ( clearAlpha !== undefined ) ? clearAlpha : 0;
+
+	this.clear = true;
+	this.clearDepth = false;
+	this.needsSwap = false;
+
+};
+
+THREE.RenderPass.prototype = Object.assign( Object.create( THREE.Pass.prototype ), {
+
+	constructor: THREE.RenderPass,
+
+	render: function ( renderer, writeBuffer, readBuffer, delta, maskActive ) {
+
+		var oldAutoClear = renderer.autoClear;
+		renderer.autoClear = false;
+
+		this.scene.overrideMaterial = this.overrideMaterial;
+
+		var oldClearColor, oldClearAlpha;
+
+		if ( this.clearColor ) {
+
+			oldClearColor = renderer.getClearColor().getHex();
+			oldClearAlpha = renderer.getClearAlpha();
+
+			renderer.setClearColor( this.clearColor, this.clearAlpha );
+
+		}
+
+		if ( this.clearDepth ) {
+
+			renderer.clearDepth();
+
+		}
+
+		renderer.render( this.scene, this.camera, this.renderToScreen ? null : readBuffer, this.clear );
+
+		if ( this.clearColor ) {
+
+			renderer.setClearColor( oldClearColor, oldClearAlpha );
+
+		}
+
+		this.scene.overrideMaterial = null;
+		renderer.autoClear = oldAutoClear;
+	}
+
+} );
+
+
+
+/***/ }),
+/* 7 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__VThree__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__Scene01__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__GUI__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_imports_loader_THREE_three_three_examples_js_shaders_VignetteShader__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_imports_loader_THREE_three_three_examples_js_shaders_VignetteShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_1_imports_loader_THREE_three_three_examples_js_shaders_VignetteShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_three_examples_js_shaders_CopyShader__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_three_examples_js_shaders_CopyShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_three_examples_js_shaders_CopyShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_imports_loader_THREE_three_three_examples_js_postprocessing_EffectComposer__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_imports_loader_THREE_three_three_examples_js_postprocessing_EffectComposer___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3_imports_loader_THREE_three_three_examples_js_postprocessing_EffectComposer__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_imports_loader_THREE_three_three_examples_js_postprocessing_RenderPass__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_imports_loader_THREE_three_three_examples_js_postprocessing_RenderPass___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_imports_loader_THREE_three_three_examples_js_postprocessing_RenderPass__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_imports_loader_THREE_three_three_examples_js_shaders_ConvolutionShader__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_imports_loader_THREE_three_three_examples_js_shaders_ConvolutionShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_imports_loader_THREE_three_three_examples_js_shaders_ConvolutionShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6_imports_loader_THREE_three_three_examples_js_shaders_BleachBypassShader__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6_imports_loader_THREE_three_three_examples_js_shaders_BleachBypassShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_6_imports_loader_THREE_three_three_examples_js_shaders_BleachBypassShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_imports_loader_THREE_three_three_examples_js_shaders_FilmShader__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_imports_loader_THREE_three_three_examples_js_shaders_FilmShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_7_imports_loader_THREE_three_three_examples_js_shaders_FilmShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_imports_loader_THREE_three_three_examples_js_shaders_VerticalTiltShiftShader__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_imports_loader_THREE_three_three_examples_js_shaders_VerticalTiltShiftShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_8_imports_loader_THREE_three_three_examples_js_shaders_VerticalTiltShiftShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__VThree__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__Scene01__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__Scene02__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__Scene03__ = __webpack_require__(33);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__Home__ = __webpack_require__(36);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__GUI__ = __webpack_require__(40);
+var css = __webpack_require__(8);
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+// var img = require('./texture/pal01_opt.png');
+// console.log(img);
 console.log(__WEBPACK_IMPORTED_MODULE_0_three__);
 var Main = /** @class */ (function () {
     function Main() {
-        this.gui = new __WEBPACK_IMPORTED_MODULE_3__GUI__["a" /* default */]();
-        this.vthree = new __WEBPACK_IMPORTED_MODULE_1__VThree__["a" /* default */]();
-        this.scene01 = new __WEBPACK_IMPORTED_MODULE_2__Scene01__["a" /* default */](this.vthree.renderer, this.gui, this.vthree);
+        this.gui = new __WEBPACK_IMPORTED_MODULE_14__GUI__["a" /* default */]();
+        this.vthree = new __WEBPACK_IMPORTED_MODULE_9__VThree__["a" /* default */]();
+        this.vthree.progress = {
+            "home": 0,
+            "scene1": 0,
+            "scene2": 0,
+            "scene3": 0
+        };
+        this.home = new __WEBPACK_IMPORTED_MODULE_13__Home__["a" /* default */](this.vthree.renderer, this.gui, this.vthree);
+        this.scene01 = new __WEBPACK_IMPORTED_MODULE_10__Scene01__["a" /* default */](this.vthree.renderer, this.gui, this.vthree);
+        this.scene02 = new __WEBPACK_IMPORTED_MODULE_11__Scene02__["a" /* default */](this.vthree.renderer, this.gui, this.vthree);
+        this.scene03 = new __WEBPACK_IMPORTED_MODULE_12__Scene03__["a" /* default */](this.vthree.renderer, this.gui, this.vthree);
+        this.vthree.addScene(this.home);
         this.vthree.addScene(this.scene01);
+        this.vthree.addScene(this.scene02);
+        this.vthree.addScene(this.scene03);
         this.vthree.draw();
     }
     return Main;
@@ -44332,19 +46742,400 @@ window.addEventListener('DOMContentLoaded', function () {
 
 
 /***/ }),
-/* 2 */
+/* 8 */
+/***/ (function(module, exports) {
+
+// removed by extract-text-webpack-plugin
+
+/***/ }),
+/* 9 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ *
+ * Convolution shader
+ * ported from o3d sample to WebGL / GLSL
+ * http://o3d.googlecode.com/svn/trunk/samples/convolution.html
+ */
+
+THREE.ConvolutionShader = {
+
+	defines: {
+
+		"KERNEL_SIZE_FLOAT": "25.0",
+		"KERNEL_SIZE_INT": "25"
+
+	},
+
+	uniforms: {
+
+		"tDiffuse":        { value: null },
+		"uImageIncrement": { value: new THREE.Vector2( 0.001953125, 0.0 ) },
+		"cKernel":         { value: [] }
+
+	},
+
+	vertexShader: [
+
+		"uniform vec2 uImageIncrement;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vUv = uv - ( ( KERNEL_SIZE_FLOAT - 1.0 ) / 2.0 ) * uImageIncrement;",
+			"gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+
+		"}"
+
+	].join( "\n" ),
+
+	fragmentShader: [
+
+		"uniform float cKernel[ KERNEL_SIZE_INT ];",
+
+		"uniform sampler2D tDiffuse;",
+		"uniform vec2 uImageIncrement;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vec2 imageCoord = vUv;",
+			"vec4 sum = vec4( 0.0, 0.0, 0.0, 0.0 );",
+
+			"for( int i = 0; i < KERNEL_SIZE_INT; i ++ ) {",
+
+				"sum += texture2D( tDiffuse, imageCoord ) * cKernel[ i ];",
+				"imageCoord += uImageIncrement;",
+
+			"}",
+
+			"gl_FragColor = sum;",
+
+		"}"
+
+
+	].join( "\n" ),
+
+	buildKernel: function ( sigma ) {
+
+		// We lop off the sqrt(2 * pi) * sigma term, since we're going to normalize anyway.
+
+		function gauss( x, sigma ) {
+
+			return Math.exp( - ( x * x ) / ( 2.0 * sigma * sigma ) );
+
+		}
+
+		var i, values, sum, halfWidth, kMaxKernelSize = 25, kernelSize = 2 * Math.ceil( sigma * 3.0 ) + 1;
+
+		if ( kernelSize > kMaxKernelSize ) kernelSize = kMaxKernelSize;
+		halfWidth = ( kernelSize - 1 ) * 0.5;
+
+		values = new Array( kernelSize );
+		sum = 0.0;
+		for ( i = 0; i < kernelSize; ++ i ) {
+
+			values[ i ] = gauss( i - halfWidth, sigma );
+			sum += values[ i ];
+
+		}
+
+		// normalize the kernel
+
+		for ( i = 0; i < kernelSize; ++ i ) values[ i ] /= sum;
+
+		return values;
+
+	}
+
+};
+
+
+
+/***/ }),
+/* 10 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ *
+ * Bleach bypass shader [http://en.wikipedia.org/wiki/Bleach_bypass]
+ * - based on Nvidia example
+ * http://developer.download.nvidia.com/shaderlibrary/webpages/shader_library.html#post_bleach_bypass
+ */
+
+THREE.BleachBypassShader = {
+
+	uniforms: {
+
+		"tDiffuse": { value: null },
+		"opacity":  { value: 1.0 }
+
+	},
+
+	vertexShader: [
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vUv = uv;",
+			"gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+
+		"}"
+
+	].join( "\n" ),
+
+	fragmentShader: [
+
+		"uniform float opacity;",
+
+		"uniform sampler2D tDiffuse;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vec4 base = texture2D( tDiffuse, vUv );",
+
+			"vec3 lumCoeff = vec3( 0.25, 0.65, 0.1 );",
+			"float lum = dot( lumCoeff, base.rgb );",
+			"vec3 blend = vec3( lum );",
+
+			"float L = min( 1.0, max( 0.0, 10.0 * ( lum - 0.45 ) ) );",
+
+			"vec3 result1 = 2.0 * base.rgb * blend;",
+			"vec3 result2 = 1.0 - 2.0 * ( 1.0 - blend ) * ( 1.0 - base.rgb );",
+
+			"vec3 newColor = mix( result1, result2, L );",
+
+			"float A2 = opacity * base.a;",
+			"vec3 mixRGB = A2 * newColor.rgb;",
+			"mixRGB += ( ( 1.0 - A2 ) * base.rgb );",
+
+			"gl_FragColor = vec4( mixRGB, base.a );",
+
+		"}"
+
+	].join( "\n" )
+
+};
+
+
+
+/***/ }),
+/* 11 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ *
+ * Film grain & scanlines shader
+ *
+ * - ported from HLSL to WebGL / GLSL
+ * http://www.truevision3d.com/forums/showcase/staticnoise_colorblackwhite_scanline_shaders-t18698.0.html
+ *
+ * Screen Space Static Postprocessor
+ *
+ * Produces an analogue noise overlay similar to a film grain / TV static
+ *
+ * Original implementation and noise algorithm
+ * Pat 'Hawthorne' Shearon
+ *
+ * Optimized scanlines + noise version with intensity scaling
+ * Georg 'Leviathan' Steinrohder
+ *
+ * This version is provided under a Creative Commons Attribution 3.0 License
+ * http://creativecommons.org/licenses/by/3.0/
+ */
+
+THREE.FilmShader = {
+
+	uniforms: {
+
+		"tDiffuse":   { value: null },
+		"time":       { value: 0.0 },
+		"nIntensity": { value: 0.5 },
+		"sIntensity": { value: 0.05 },
+		"sCount":     { value: 4096 },
+		"grayscale":  { value: 1 }
+
+	},
+
+	vertexShader: [
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vUv = uv;",
+			"gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+
+		"}"
+
+	].join( "\n" ),
+
+	fragmentShader: [
+
+		"#include <common>",
+		
+		// control parameter
+		"uniform float time;",
+
+		"uniform bool grayscale;",
+
+		// noise effect intensity value (0 = no effect, 1 = full effect)
+		"uniform float nIntensity;",
+
+		// scanlines effect intensity value (0 = no effect, 1 = full effect)
+		"uniform float sIntensity;",
+
+		// scanlines effect count value (0 = no effect, 4096 = full effect)
+		"uniform float sCount;",
+
+		"uniform sampler2D tDiffuse;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			// sample the source
+			"vec4 cTextureScreen = texture2D( tDiffuse, vUv );",
+
+			// make some noise
+			"float dx = rand( vUv + time );",
+
+			// add noise
+			"vec3 cResult = cTextureScreen.rgb + cTextureScreen.rgb * clamp( 0.1 + dx, 0.0, 1.0 );",
+
+			// get us a sine and cosine
+			"vec2 sc = vec2( sin( vUv.y * sCount ), cos( vUv.y * sCount ) );",
+
+			// add scanlines
+			"cResult += cTextureScreen.rgb * vec3( sc.x, sc.y, sc.x ) * sIntensity;",
+
+			// interpolate between source and result by intensity
+			"cResult = cTextureScreen.rgb + clamp( nIntensity, 0.0,1.0 ) * ( cResult - cTextureScreen.rgb );",
+
+			// convert to grayscale if desired
+			"if( grayscale ) {",
+
+				"cResult = vec3( cResult.r * 0.3 + cResult.g * 0.59 + cResult.b * 0.11 );",
+
+			"}",
+
+			"gl_FragColor =  vec4( cResult, cTextureScreen.a );",
+
+		"}"
+
+	].join( "\n" )
+
+};
+
+
+
+/***/ }),
+/* 12 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ *
+ * Simple fake tilt-shift effect, modulating two pass Gaussian blur (see above) by vertical position
+ *
+ * - 9 samples per pass
+ * - standard deviation 2.7
+ * - "h" and "v" parameters should be set to "1 / width" and "1 / height"
+ * - "r" parameter control where "focused" horizontal line lies
+ */
+
+THREE.VerticalTiltShiftShader = {
+
+	uniforms: {
+
+		"tDiffuse": { value: null },
+		"v":        { value: 1.0 / 512.0 },
+		"r":        { value: 0.35 }
+
+	},
+
+	vertexShader: [
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vUv = uv;",
+			"gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );",
+
+		"}"
+
+	].join( "\n" ),
+
+	fragmentShader: [
+
+		"uniform sampler2D tDiffuse;",
+		"uniform float v;",
+		"uniform float r;",
+
+		"varying vec2 vUv;",
+
+		"void main() {",
+
+			"vec4 sum = vec4( 0.0 );",
+
+			"float vv = v * abs( r - vUv.y );",
+
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y - 4.0 * vv ) ) * 0.051;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y - 3.0 * vv ) ) * 0.0918;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y - 2.0 * vv ) ) * 0.12245;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y - 1.0 * vv ) ) * 0.1531;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y ) ) * 0.1633;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y + 1.0 * vv ) ) * 0.1531;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y + 2.0 * vv ) ) * 0.12245;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y + 3.0 * vv ) ) * 0.0918;",
+			"sum += texture2D( tDiffuse, vec2( vUv.x, vUv.y + 4.0 * vv ) ) * 0.051;",
+
+			"gl_FragColor = sum;",
+
+		"}"
+
+	].join( "\n" )
+
+};
+
+
+
+/***/ }),
+/* 13 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_jquery__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_jquery__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_jquery___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_1_jquery__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_node_modules_three_examples_js_controls_OrbitControls__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_node_modules_three_examples_js_controls_OrbitControls__ = __webpack_require__(15);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_node_modules_three_examples_js_controls_OrbitControls___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_node_modules_three_examples_js_controls_OrbitControls__);
 
 
 
-// console.log(OrbitControls);
+var Stats = __webpack_require__(16);
+// console.log(THREE.OrbitControls);
 var VThree = /** @class */ (function () {
     function VThree(config) {
         var _this = this;
@@ -44365,6 +47156,14 @@ var VThree = /** @class */ (function () {
         this.debugCounter = 0;
         this.oscValue = [];
         this.rendertarget = null;
+        this.screenWidth = 0;
+        this.screenHeight = 0;
+        this.maxWidth = 640;
+        this.firstupdateDelayNum = 60;
+        this.sceneFirtstUpdateDelay = 60;
+        this.awakedNum = 0;
+        this.isFistUpdate = [];
+        this.isAllSceneAwaking = false;
         this.onMouseDown = function (e) {
             _this.scenes[_this.NUM].onMouseDown(e);
         };
@@ -44372,9 +47171,10 @@ var VThree = /** @class */ (function () {
         this.onWindowResize = function () {
             var windowHalfX = window.innerWidth / 2;
             var windowHalfY = window.innerHeight / 2;
-            _this.scenes[_this.NUM].camera.aspect = window.innerWidth / window.innerHeight;
-            _this.scenes[_this.NUM].camera.updateProjectionMatrix();
-            _this.renderer.setSize(window.innerWidth, window.innerHeight);
+            // this.scenes[this.NUM].camera.aspect = window.innerWidth / window.innerWidth/2;
+            // this.scenes[this.NUM].camera.updateProjectionMatrix();
+            _this.computeScreenSize();
+            _this.scenes[_this.NUM].windowResize();
             console.log("resize");
         };
         // 現在のシーン番号が、不適切な値にならないようにチェック
@@ -44385,9 +47185,20 @@ var VThree = /** @class */ (function () {
             if (_this.NUM >= _this.scenes.length) {
                 _this.NUM = 0;
             }
+            try {
+                if (!_this.scenes[_this.NUM].isShaderReplace) {
+                    _this.scenes[_this.NUM].Awake();
+                }
+            }
+            catch (e) {
+                console.log(e);
+            }
         };
         this.onClick = function () {
             _this.scenes[_this.NUM].click();
+            // this.screenWidth = this.maxWidth * ( Math.random()*1.0);
+            // this.screenHeight = this.screenWidth/2;
+            // this.renderer.setSize( this.screenWidth, this.screenHeight );
         };
         // ←→キーでシーン番号を足し引き
         this.onKeyUp = function (e) {
@@ -44397,7 +47208,8 @@ var VThree = /** @class */ (function () {
             try {
                 _this.scenes[_this.NUM].mouseMove(e);
             }
-            finally {
+            catch (e) {
+                console.log(e); // 例外オブジェクトをエラー処理部分に渡す
             }
         };
         this.onKeyDown = function (e) {
@@ -44455,12 +47267,13 @@ var VThree = /** @class */ (function () {
                     }
                 }
             }
-            finally {
+            catch (e) {
+                console.log(e); // 例外オブジェクトをエラー処理部分に渡す
             }
         };
         console.log(config);
         this.debugMode = (config === undefined ? false : config.debugMode);
-        this.transparent = true;
+        this.transparent = false;
         // 初期化処理後、イベント登録
         this.init();
         window.addEventListener('resize', this.onWindowResize, false);
@@ -44483,8 +47296,12 @@ var VThree = /** @class */ (function () {
     VThree.prototype.init = function () {
         // Rendererを作る
         this.renderer = new __WEBPACK_IMPORTED_MODULE_0_three__["WebGLRenderer"]({ antialias: true, alpha: true });
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(1);
+        this.computeScreenSize();
+        // this.onWindowResize();
+        // this.screenWidth = window.innerWidth;
+        // this.screenHeight = this.screenWidth/2.0;
+        // this.renderer.setSize( this.screenWidth, this.screenHeight );
         this.renderer.sortObjects = false;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = __WEBPACK_IMPORTED_MODULE_0_three__["BasicShadowMap"];
@@ -44493,15 +47310,33 @@ var VThree = /** @class */ (function () {
         this.renderer.gammaOutput = true;
         document.body.appendChild(this.renderer.domElement);
         this.updateCanvasAlpha();
-        // this.stats = new Stats();
-        // document.body.appendChild(this.stats.domElement);
+        this.stats = new Stats();
+        document.body.appendChild(this.stats.domElement);
         this.debug();
+        __WEBPACK_IMPORTED_MODULE_1_jquery__('#main').css("width", "100%");
+        __WEBPACK_IMPORTED_MODULE_1_jquery__('#main').css("height", (window.innerWidth / 2) + "px");
     };
     // 管理したいシーンを格納する関数
     VThree.prototype.addScene = function (scene) {
+        // this.progress.push(0);
+        this.isFistUpdate.push(false);
         this.scenes.push(scene);
         this.cameras.push(scene.camera);
-        ;
+        // this.scenes[this.scenes.length-1].update();
+    };
+    VThree.prototype.computeScreenSize = function () {
+        var w = window.innerWidth;
+        if (w > this.maxWidth) {
+            w = this.maxWidth;
+        }
+        this.screenWidth = w;
+        this.screenHeight = this.screenWidth / 2;
+        this.renderer.setSize(this.screenWidth, this.screenHeight);
+        __WEBPACK_IMPORTED_MODULE_1_jquery__('#main').css("width", "100%");
+        __WEBPACK_IMPORTED_MODULE_1_jquery__('#main').css("height", (window.innerWidth / 2) + "px");
+    };
+    VThree.prototype.getScreenWH = function () {
+        return { w: this.screenWidth, h: this.screenHeight };
     };
     VThree.prototype.nextScene = function () {
         this.NUM++;
@@ -44537,25 +47372,50 @@ var VThree = /** @class */ (function () {
         this.debug();
     };
     VThree.prototype.debug = function () {
-        if (this.debugMode) {
-            __WEBPACK_IMPORTED_MODULE_1_jquery__('.dg').css('display', 'block');
-        }
-        else {
-            __WEBPACK_IMPORTED_MODULE_1_jquery__('.dg').css('display', 'none');
-        }
     };
     VThree.prototype.start = function () {
     };
     // 最終的な描写処理と、アニメーション関数をワンフレームごとに実行
     VThree.prototype.draw = function (time) {
-        // this.stats.update(time);
+        if (!this.isAllSceneAwaking) {
+            var count = 0;
+            var p = 0;
+            for (var i = 0; i < this.scenes.length; i++) {
+                p += this.progress[this.scenes[i].name];
+                if (this.progress[this.scenes[i].name] == 100) {
+                    count++;
+                }
+                if (i == this.scenes.length - 1) {
+                    if (this.scenes.length == count) {
+                        this.isAllSceneAwaking = true;
+                    }
+                }
+            }
+            __WEBPACK_IMPORTED_MODULE_1_jquery__('.process').text(Math.ceil(p / 4.0) - 1);
+        }
+        if (this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
+            this.sceneFirtstUpdateDelay--;
+            if (this.sceneFirtstUpdateDelay < 0) {
+                this.nextScene();
+                this.sceneFirtstUpdateDelay = this.firstupdateDelayNum;
+                this.awakedNum++;
+            }
+        }
+        this.stats.update(time);
         this.scenes[this.NUM].update(time, this.isUpdate);
         if (this.rendertarget === null) {
-            this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera);
+            if (!this.scenes[this.NUM].isPostProcessing) {
+                this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera);
+            }
         }
         else {
-            this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera, this.rendertarget);
+            if (!this.scenes[this.NUM].isPostProcessing) {
+                this.renderer.render(this.scenes[this.NUM].scene, this.scenes[this.NUM].camera, this.rendertarget);
+            }
         }
+        //
+        // console.log("progress");
+        // console.log(this.progress);
         if (this.isUpdate) {
             requestAnimationFrame(this.draw.bind(this));
         }
@@ -44567,7 +47427,7 @@ var VThree = /** @class */ (function () {
 
 
 /***/ }),
-/* 3 */
+/* 14 */
 /***/ (function(module, exports, __webpack_require__) {
 
 var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
@@ -54827,7 +57687,7 @@ return jQuery;
 
 
 /***/ }),
-/* 4 */
+/* 15 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*** IMPORTS FROM imports-loader ***/
@@ -55879,25 +58739,69 @@ Object.defineProperties( THREE.OrbitControls.prototype, {
 
 
 /***/ }),
-/* 5 */
+/* 16 */
+/***/ (function(module, exports) {
+
+// stats.js - http://github.com/mrdoob/stats.js
+var Stats=function(){var l=Date.now(),m=l,g=0,n=Infinity,o=0,h=0,p=Infinity,q=0,r=0,s=0,f=document.createElement("div");f.id="stats";f.addEventListener("mousedown",function(b){b.preventDefault();t(++s%2)},!1);f.style.cssText="width:80px;opacity:0.9;cursor:pointer";var a=document.createElement("div");a.id="fps";a.style.cssText="padding:0 0 3px 3px;text-align:left;background-color:#002";f.appendChild(a);var i=document.createElement("div");i.id="fpsText";i.style.cssText="color:#0ff;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:bold;line-height:15px";
+i.innerHTML="FPS";a.appendChild(i);var c=document.createElement("div");c.id="fpsGraph";c.style.cssText="position:relative;width:74px;height:30px;background-color:#0ff";for(a.appendChild(c);74>c.children.length;){var j=document.createElement("span");j.style.cssText="width:1px;height:30px;float:left;background-color:#113";c.appendChild(j)}var d=document.createElement("div");d.id="ms";d.style.cssText="padding:0 0 3px 3px;text-align:left;background-color:#020;display:none";f.appendChild(d);var k=document.createElement("div");
+k.id="msText";k.style.cssText="color:#0f0;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:bold;line-height:15px";k.innerHTML="MS";d.appendChild(k);var e=document.createElement("div");e.id="msGraph";e.style.cssText="position:relative;width:74px;height:30px;background-color:#0f0";for(d.appendChild(e);74>e.children.length;)j=document.createElement("span"),j.style.cssText="width:1px;height:30px;float:left;background-color:#131",e.appendChild(j);var t=function(b){s=b;switch(s){case 0:a.style.display=
+"block";d.style.display="none";break;case 1:a.style.display="none",d.style.display="block"}};return{REVISION:12,domElement:f,setMode:t,begin:function(){l=Date.now()},end:function(){var b=Date.now();g=b-l;n=Math.min(n,g);o=Math.max(o,g);k.textContent=g+" MS ("+n+"-"+o+")";var a=Math.min(30,30-30*(g/200));e.appendChild(e.firstChild).style.height=a+"px";r++;b>m+1E3&&(h=Math.round(1E3*r/(b-m)),p=Math.min(p,h),q=Math.max(q,h),i.textContent=h+" FPS ("+p+"-"+q+")",a=Math.min(30,30-30*(h/100)),c.appendChild(c.firstChild).style.height=
+a+"px",m=b,r=0);return b},update:function(){l=this.end()}}};"object"===typeof module&&(module.exports=Stats);
+
+
+/***/ }),
+/* 17 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_imports_loader_THREE_three_three_examples_js_shaders_VignetteShader__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_imports_loader_THREE_three_three_examples_js_shaders_VignetteShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_1_imports_loader_THREE_three_three_examples_js_shaders_VignetteShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_three_examples_js_shaders_CopyShader__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_three_examples_js_shaders_CopyShader___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_2_imports_loader_THREE_three_three_examples_js_shaders_CopyShader__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_imports_loader_THREE_three_three_examples_js_postprocessing_EffectComposer__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_imports_loader_THREE_three_three_examples_js_postprocessing_EffectComposer___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3_imports_loader_THREE_three_three_examples_js_postprocessing_EffectComposer__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_imports_loader_THREE_three_three_examples_js_postprocessing_RenderPass__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_imports_loader_THREE_three_three_examples_js_postprocessing_RenderPass___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_imports_loader_THREE_three_three_examples_js_postprocessing_RenderPass__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_imports_loader_THREE_three_three_examples_js_postprocessing_ShaderPass__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_imports_loader_THREE_three_three_examples_js_postprocessing_ShaderPass___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_imports_loader_THREE_three_three_examples_js_postprocessing_ShaderPass__);
 
+var NoiseUvShader_Frag = __webpack_require__(18);
+var NoiseUvShader_Vert = __webpack_require__(19);
+var texture = __webpack_require__(20);
+var TimeLineMax = __webpack_require__(21);
+var TimelineLite = __webpack_require__(22);
+var TweenLite = __webpack_require__(1);
+var EASE = __webpack_require__(23);
+__webpack_require__(24);
+var CustomEase = __webpack_require__(25);
+
+
+
+
+
+// let c = new CustomEase();
+console.log(TweenLite);
 var Scene01 = /** @class */ (function () {
     // ******************************************************
     function Scene01(renderer, gui, vthree) {
+        this.name = "scene1";
         this.isPostProcessing = false;
         this.isImageUpdate = false;
         this.isAnimationStart = false;
-        this.startPlaneZ = -0.1;
+        this.startPlaneZ = { value: 0 };
         this.planeMoveSpeed = 0.05;
         this.planeRotateSpeed = 0.02;
         this.image_noiseScale = 0.0;
         this.image_noiseSeed = 0.0;
         this.image_noiseSpeed = 0.0;
-        this.clearColor = 0.0;
+        this.isTweenStart = false;
+        this.rendertarget = true;
+        this.counter = 0;
+        this.translatedZ = 0;
+        this.isPlaneConstantMove = false;
+        this.isShaderReplace = true;
         this.renderer = renderer;
         this.gui = gui;
         this.vthree = vthree;
@@ -55906,10 +58810,16 @@ var Scene01 = /** @class */ (function () {
     }
     // ******************************************************
     Scene01.prototype.createScene = function () {
+        // this.vthree.progress.push({'scene1':0});
         this.scene = new __WEBPACK_IMPORTED_MODULE_0_three__["Scene"]();
         this.scene.add(new __WEBPACK_IMPORTED_MODULE_0_three__["AmbientLight"](0xffffff, 1.0));
+        this.texture = new Image();
+        this.texture.src = texture;
+        var tex = new __WEBPACK_IMPORTED_MODULE_0_three__["Texture"]();
+        tex.needsUpdate = true;
+        tex.image = this.texture;
         this.image_uniform = {
-            texture: { value: new __WEBPACK_IMPORTED_MODULE_0_three__["TextureLoader"]().load("./Texture/pal01.png") },
+            texture: { value: tex },
             time: { value: 0.0 },
             noiseSeed: { value: 0.1 },
             noiseScale: { value: 0.1 },
@@ -55920,91 +58830,60 @@ var Scene01 = /** @class */ (function () {
             display: { value: true }
         };
         // 立方体のジオメトリーを作成
-        this.plane_geometry = new __WEBPACK_IMPORTED_MODULE_0_three__["PlaneGeometry"](1, window.innerHeight / window.innerWidth, 100, 100);
+        this.plane_geometry = new __WEBPACK_IMPORTED_MODULE_0_three__["PlaneGeometry"](this.vthree.getScreenWH().w, this.vthree.getScreenWH().h);
         // 緑のマテリアルを作成
         this.plane_material = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderMaterial"]({
             uniforms: this.image_uniform,
-            vertexShader: document.getElementById('imageVertexShader').textContent,
-            fragmentShader: document.getElementById('imageFragmentShader').textContent,
+            vertexShader: NoiseUvShader_Vert,
+            fragmentShader: NoiseUvShader_Frag,
             side: __WEBPACK_IMPORTED_MODULE_0_three__["DoubleSide"]
         });
         // 上記作成のジオメトリーとマテリアルを合わせてメッシュを生成
         this.plane = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](this.plane_geometry, this.plane_material);
+        // this.plane.position.z = 10;
         this.scene.add(this.plane);
         // カメラを作成
-        this.camera = new __WEBPACK_IMPORTED_MODULE_0_three__["PerspectiveCamera"](75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera = new __WEBPACK_IMPORTED_MODULE_0_three__["PerspectiveCamera"](90, this.vthree.getScreenWH().w / this.vthree.getScreenWH().h, 0.1, 10000);
         // カメラ位置を設定
-        this.camera.position.z = 0;
+        this.camera.position.z = this.vthree.getScreenWH().h / 2;
+        this.clearColor = new __WEBPACK_IMPORTED_MODULE_0_three__["Color"]("rgb(0,0,0)");
+        this.renderer.setClearColor(this.clearColor.getHex());
         this.image_noiseSeed = this.gui.parameters.image_noiseSeed;
         this.image_noiseScale = this.gui.parameters.image_noiseScale;
         this.image_noiseSpeed = this.gui.parameters.image_speed;
         this.initPostProcessing();
+        this.reset();
+        this.vthree.progress[this.name] = 100;
     };
     Scene01.prototype.initPostProcessing = function () {
-        //
-        // var shaderBleach = THREE.BleachBypassShader;
-        // var shaderSepia = THREE.SepiaShader;
-        // var shaderVignette = THREE.VignetteShader;
-        // var shaderCopy = THREE.CopyShader;
-        //
-        //
-        // var shaderBleach = THREE.BleachBypassShader;
-        // var shaderSepia = THREE.SepiaShader;
-        // var shaderVignette = THREE.VignetteShader;
-        // var shaderCopy = THREE.CopyShader;
-        // var effectBleach = new THREE.ShaderPass( shaderBleach );
-        // var effectSepia = new THREE.ShaderPass( shaderSepia );
-        // var effectVignette = new THREE.ShaderPass( shaderVignette );
-        // var effectCopy = new THREE.ShaderPass( shaderCopy );
-        // effectBleach.uniforms[ "opacity" ].value = 0.05;
-        // effectSepia.uniforms[ "amount" ].value = 0.9;
-        // effectVignette.uniforms[ "offset" ].value = 0.95;
-        // effectVignette.uniforms[ "darkness" ].value = 1.6;
-        //
-        //
-        // var effectBloom = new THREE.BloomPass( 2.2);
-        // var effectFilm = new THREE.FilmPass( 0.35, 0.025, 1024, false );
-        // var effectFilmBW = new THREE.FilmPass( 0.35, 0.5, 2048, true );
-        // effectVignette.renderToScreen = true;
-        // effectBleach.renderToScreen = true;
-        // var effectDotScreen = new THREE.DotScreenPass( new THREE.Vector2( 0, 0 ), 0.5, 0.8 );
-        //
-        //
-        // effectFilm.renderToScreen = true;
-        // effectFilmBW.renderToScreen = true;
-        //
-        //
-        // var effectHBlur = new THREE.ShaderPass( THREE.HorizontalBlurShader );
-        // var effectVBlur = new THREE.ShaderPass( THREE.VerticalBlurShader );
-        // effectHBlur.uniforms[ 'h' ].value = 4 / ( window.innerWidth / 2 );
-        // effectVBlur.uniforms[ 'v' ].value = 4 / ( window.innerHeight / 2 );
-        // var effectColorify1 = new THREE.ShaderPass( THREE.ColorifyShader );
-        // var effectColorify2 = new THREE.ShaderPass( THREE.ColorifyShader );
-        // effectColorify1.uniforms[ 'color' ] = new THREE.Uniform( new THREE.Color( 1, 0.8, 0.8 ) );
-        // effectColorify2.uniforms[ 'color' ] = new THREE.Uniform( new THREE.Color( 1, 0.75, 0.5 ) );
-        // var clearMask = new THREE.ClearMaskPass();
-        // var renderMask = new THREE.MaskPass( this.scene, this.camera );
-        // var renderMaskInverse = new THREE.MaskPass( this.scene, this.camera );
-        // renderMaskInverse.inverse = true;
-        // this.composer = new THREE.EffectComposer( this.renderer );
-        // this.composer.addPass( new THREE.RenderPass( this.scene, this.camera ) );
-        // let renderScene = new THREE.TexturePass( this.composer.renderTarget2.texture );
-        //
-        // var effectRGB = new THREE.ShaderPass( THREE.RGBShiftShader );
-        // effectRGB.uniforms[ 'amount' ].value = 0.001;
-        // effectRGB.renderToScreen = true;
-        //
-        //
-        // this.composer.addPass( effectFilm   );
-        // this.composer.addPass( effectBleach   );
-        // this.composer.addPass( effectVignette    );
-        //
-        //
-        // this.composer.addPass( renderMaskInverse  );
-        // this.composer.addPass( effectHBlur  );
-        // this.composer.addPass( effectVBlur  );
-        // this.composer.addPass( clearMask     );
-        // this.isPostProcessing = true;
+        var shaderVignette = __WEBPACK_IMPORTED_MODULE_0_three__["VignetteShader"];
+        var shaderBleach = __WEBPACK_IMPORTED_MODULE_0_three__["BleachBypassShader"];
+        var film = __WEBPACK_IMPORTED_MODULE_0_three__["FilmShader"];
+        film.uniforms = {
+            "tDiffuse": { value: null },
+            "time": { value: 0.0 },
+            "nIntensity": { value: 0.4 },
+            "sIntensity": { value: 0.06 },
+            "sCount": { value: 4096 / 2 },
+            "grayscale": { value: 0 }
+        };
+        var ConvolutionShader = __WEBPACK_IMPORTED_MODULE_0_three__["ConvolutionShader"];
+        var shaderCopy = __WEBPACK_IMPORTED_MODULE_0_three__["CopyShader"];
+        var effectVignette = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](shaderVignette);
+        var effectCopy = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](shaderCopy);
+        effectVignette.uniforms["offset"].value = 0.95;
+        effectVignette.uniforms["darkness"].value = 1.6;
+        // var effectBloom = new THREE.ShaderPass( ConvolutionShader );
+        this.effectFilm = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](film);
+        var effectBleach = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](shaderBleach);
+        effectVignette.renderToScreen = true;
+        this.composer = new __WEBPACK_IMPORTED_MODULE_0_three__["EffectComposer"](this.renderer);
+        this.composer.addPass(new __WEBPACK_IMPORTED_MODULE_0_three__["RenderPass"](this.scene, this.camera));
+        // this.composer.addPass( effectBloom );
+        this.composer.addPass(this.effectFilm);
+        this.composer.addPass(effectBleach);
+        this.composer.addPass(effectVignette);
+        this.isPostProcessing = true;
     };
     // ******************************************************
     Scene01.prototype.click = function () {
@@ -56012,13 +58891,21 @@ var Scene01 = /** @class */ (function () {
     // ******************************************************
     Scene01.prototype.keyUp = function (e) {
     };
+    Scene01.prototype.windowResize = function () {
+        // this.camera.aspect = window.innerWidth / window.innerWidth/2;
+        // this.camera.updateProjectionMatrix();
+        // this.camera.position.z = this.vthree.getScreenWH().h/2;
+        // this.plane_geometry.vertices = new THREE.PlaneGeometry(this.vthree.getScreenWH().w,this.vthree.getScreenWH().h).vertices;
+        // this.plane_geometry.verticesNeedUpdate = true;
+    };
     // ******************************************************
     Scene01.prototype.mouseMove = function (e) {
     };
     Scene01.prototype.reset = function () {
+        this.imageRotation = new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0, 0, 0);
         this.isAnimationStart = false;
-        this.startPlaneZ = -0.1;
-        this.plane.position.set(0, 0, -0.1);
+        this.startPlaneZ.value = -0;
+        this.plane.position.set(0, 0, 0);
         this.plane.rotation.setFromVector3(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0, 0, 0));
         this.renderer.setClearColor(0x000000);
         this.image_noiseSeed = this.gui.parameters.image_noiseSeed;
@@ -56026,7 +58913,11 @@ var Scene01 = /** @class */ (function () {
         this.image_noiseSpeed = this.gui.parameters.image_speed;
         this.planeMoveSpeed = 0.05;
         this.planeRotateSpeed = 0.02;
-        this.clearColor = 0.0;
+        this.clearColor = new __WEBPACK_IMPORTED_MODULE_0_three__["Color"]("rgb(0,0,0)");
+        this.image_uniform.noiseScale.value = this.image_noiseScale;
+        this.image_uniform.noiseSeed.value = this.image_noiseSeed;
+        this.isPlaneConstantMove = false;
+        this.translatedZ = 0;
     };
     // ******************************************************
     Scene01.prototype.keyDown = function (e) {
@@ -56035,54 +58926,74 @@ var Scene01 = /** @class */ (function () {
         }
         if (e.key == "s") {
             this.isAnimationStart = !this.isAnimationStart;
+            this.isTweenStart = true;
         }
         if (e.key == "r") {
             this.reset();
+        }
+        if (e.key == "0") {
+            this.vthree.scenes[1].update();
+        }
+        if (e.key == "1") {
+            this.vthree.scenes[1].shaderReplace();
         }
     };
     // ******************************************************
     Scene01.prototype.onMouseDown = function (e) {
     };
+    Scene01.prototype.Awake = function () {
+        this.update();
+        this.vthree.isFistUpdate[1] = true;
+    };
     // ******************************************************
     Scene01.prototype.update = function (time) {
+        var _this = this;
+        this.counter++;
+        this.effectFilm.uniforms.time += 0.01;
         if (this.vthree.oscValue.length > 0) {
             if (this.vthree.oscValue[1] == 112) {
                 this.isAnimationStart = true;
             }
         }
         if (this.isAnimationStart) {
-            if (this.planeMoveSpeed >= 0.0005) {
-                this.planeMoveSpeed += (0.0004 - this.planeMoveSpeed) * 0.1;
+            if (this.isTweenStart) {
+                var anim = new TimeLineMax({ delay: 0.0, ease: CustomEase.create("custom", "M0,0 C0.022,0.386 -0.025,0.782 0.154,0.886 0.352,1 0.818,1 1,1"), onComplete: function () { _this.isPlaneConstantMove = true; } }).to(this.startPlaneZ, this.gui.parameters.translateDulation, { value: this.gui.parameters.image_translatedZ });
+                var anim02 = new TimeLineMax({ delay: 0, ease: CustomEase.create("custom", "M0,0 C0.03,0.386 0.114,0.777 0.224,0.85 0.336,0.924 0.818,1 1,1") }).to(this.imageRotation, this.gui.parameters.rotationDulation, {
+                    x: this.gui.parameters.image_rotationX,
+                    y: this.gui.parameters.image_rotationY,
+                    z: this.gui.parameters.image_rotationZ,
+                });
+                // this.image_uniform.noiseScale.valu
+                // this.image_uniform.noiseSeed.value
+                var tween_noiseSpeed = new TimeLineMax({ delay: 0.5, ease: EASE.Expo.easeOut }).to(this.image_uniform.noiseScale, this.gui.parameters.translateDulation * 6.0, { value: 0.04 });
+                var tween_noiseSeed = new TimeLineMax({ delay: 0.5, ease: EASE.Expo.easeOut }).to(this.image_uniform.noiseSeed, this.gui.parameters.translateDulation * 6.0, { value: 0.001 });
+                var tween_color = new TimeLineMax({ delay: 0.0 }).to(this.clearColor, this.gui.parameters.colorDulation, { r: 1.0, g: 1.0, b: 1.0 });
+                this.isTweenStart = false;
             }
-            // this.gui.parameters.image_positionZ -= this.planeMoveSpeed;
-            this.startPlaneZ -= this.planeMoveSpeed;
-            if (this.planeMoveSpeed <= 0.015) {
-                this.clearColor += (1.0 - this.clearColor) * 0.0015;
-                var c = new __WEBPACK_IMPORTED_MODULE_0_three__["Color"](this.clearColor, this.clearColor, this.clearColor);
-                this.renderer.setClearColor(c);
-                this.planeRotateSpeed += (0.0 - this.planeRotateSpeed) * 0.1;
-                this.plane.rotateX(-this.planeRotateSpeed);
-                this.plane.rotateY(-this.planeRotateSpeed / 2);
-                this.plane.rotateZ(this.planeRotateSpeed / 3);
-            }
-            if (this.planeMoveSpeed <= 0.001) {
-                this.image_noiseSeed += (0.01 - this.image_noiseSeed) * 0.005;
-                this.image_noiseScale += (0.01 - this.image_noiseScale) * 0.005;
-                this.image_noiseSpeed += (0.01 - this.image_noiseSpeed) * 0.005;
-            }
+            this.renderer.setClearColor(this.clearColor.getHex());
+            this.plane.rotateX(-this.planeRotateSpeed);
         }
-        this.image_uniform.noiseScale.value = this.image_noiseScale;
-        this.image_uniform.noiseSeed.value = this.image_noiseSeed;
         this.image_uniform.time.value += this.image_noiseSpeed;
-        this.image_uniform.noiseScale_vertex.value = this.gui.parameters.image_noiseScale_vertex;
-        this.image_uniform.noiseSeed_vertex.value = this.gui.parameters.image_noiseSeed_vertex;
-        this.image_uniform.time_scale_vertex.value = this.gui.parameters.image_speed_scale__vertex;
-        this.image_uniform.distance_threshold.value = this.gui.parameters.image_distance_threshold;
-        // }
+        if (this.isPlaneConstantMove) {
+            this.translatedZ -= 0.5;
+        }
         this.plane.position.set(this.gui.parameters.image_positionX, this.gui.parameters.image_positionY, 
-        //this.gui.parameters.image_positionZ,
-        this.startPlaneZ);
-        // this.composer.render();
+        // this.gui.parameters.image_positionZ,
+        this.startPlaneZ.value + this.translatedZ);
+        this.plane.rotation.setFromVector3(this.imageRotation);
+        // if(this.isTweenStart)
+        // {
+        this.composer.render();
+        // }
+        // else
+        // {
+        //     if(time % 2 == 0)
+        //     {
+        //         this.composer.render();
+        //     }
+        //
+        //
+        // }
     };
     return Scene01;
 }());
@@ -56090,13 +59001,12080 @@ var Scene01 = /** @class */ (function () {
 
 
 /***/ }),
-/* 6 */
+/* 18 */
+/***/ (function(module, exports) {
+
+module.exports = "uniform sampler2D texture;\n    varying vec2 vUv;\n    uniform float time;\n    varying vec3 vPos;\n    uniform float noiseScale;\n    uniform float noiseSeed;\n    float rand(vec2 co)\n    {\n       return fract(sin(dot(co.xy,vec2(12.9898,78.233))) * 43758.5453);\n    }\n\n\n    vec3 mod289(vec3 x) {\n          return x - floor(x * (1.0 / 289.0)) * 289.0;\n        }\n\n        vec4 mod289(vec4 x) {\n          return x - floor(x * (1.0 / 289.0)) * 289.0;\n        }\n\n        vec4 permute(vec4 x) {\n             return mod289(((x*34.0)+1.0)*x);\n        }\n\n        vec4 taylorInvSqrt(vec4 r)\n        {\n          return 1.79284291400159 - 0.85373472095314 * r;\n        }\n\n        float snoise(vec3 v)\n          {\n          const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;\n          const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);\n\n        // First corner\n          vec3 i  = floor(v + dot(v, C.yyy) );\n          vec3 x0 =   v - i + dot(i, C.xxx) ;\n\n        // Other corners\n          vec3 g = step(x0.yzx, x0.xyz);\n          vec3 l = 1.0 - g;\n          vec3 i1 = min( g.xyz, l.zxy );\n          vec3 i2 = max( g.xyz, l.zxy );\n\n          //   x0 = x0 - 0.0 + 0.0 * C.xxx;\n          //   x1 = x0 - i1  + 1.0 * C.xxx;\n          //   x2 = x0 - i2  + 2.0 * C.xxx;\n          //   x3 = x0 - 1.0 + 3.0 * C.xxx;\n          vec3 x1 = x0 - i1 + C.xxx;\n          vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y\n          vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y\n\n        // Permutations\n          i = mod289(i);\n          vec4 p = permute( permute( permute(\n                     i.z + vec4(0.0, i1.z, i2.z, 1.0 ))\n                   + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))\n                   + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));\n\n        // Gradients: 7x7 points over a square, mapped onto an octahedron.\n        // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)\n          float n_ = 0.142857142857; // 1.0/7.0\n          vec3  ns = n_ * D.wyz - D.xzx;\n\n          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)\n\n          vec4 x_ = floor(j * ns.z);\n          vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)\n\n          vec4 x = x_ *ns.x + ns.yyyy;\n          vec4 y = y_ *ns.x + ns.yyyy;\n          vec4 h = 1.0 - abs(x) - abs(y);\n\n          vec4 b0 = vec4( x.xy, y.xy );\n          vec4 b1 = vec4( x.zw, y.zw );\n\n          //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;\n          //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;\n          vec4 s0 = floor(b0)*2.0 + 1.0;\n          vec4 s1 = floor(b1)*2.0 + 1.0;\n          vec4 sh = -step(h, vec4(0.0));\n\n          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;\n          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;\n\n          vec3 p0 = vec3(a0.xy,h.x);\n          vec3 p1 = vec3(a0.zw,h.y);\n          vec3 p2 = vec3(a1.xy,h.z);\n          vec3 p3 = vec3(a1.zw,h.w);\n\n        //Normalise gradients\n          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));\n          p0 *= norm.x;\n          p1 *= norm.y;\n          p2 *= norm.z;\n          p3 *= norm.w;\n\n        // Mix final noise value\n          vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);\n          m = m * m;\n          return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),\n                                        dot(p2,x2), dot(p3,x3) ) );\n          }\n\n        vec3 snoiseVec3( vec3 x ){\n\n          float s  = snoise(vec3( x ));\n          float s1 = snoise(vec3( x.y - 19.1 , x.z + 33.4 , x.x + 47.2 ));\n          float s2 = snoise(vec3( x.z + 74.2 , x.x - 124.5 , x.y + 99.4 ));\n          vec3 c = vec3( s , s1 , s2 );\n          return c;\n\n        }\n\n\n        vec3 curlNoise( vec3 p ){\n\n          const float e = .1;\n          vec3 dx = vec3( e   , 0.0 , 0.0 );\n          vec3 dy = vec3( 0.0 , e   , 0.0 );\n          vec3 dz = vec3( 0.0 , 0.0 , e   );\n\n          vec3 p_x0 = snoiseVec3( p - dx );\n          vec3 p_x1 = snoiseVec3( p + dx );\n          vec3 p_y0 = snoiseVec3( p - dy );\n          vec3 p_y1 = snoiseVec3( p + dy );\n          vec3 p_z0 = snoiseVec3( p - dz );\n          vec3 p_z1 = snoiseVec3( p + dz );\n\n          float x = p_y1.z - p_y0.z - p_z1.y + p_z0.y;\n          float y = p_z1.x - p_z0.x - p_x1.z + p_x0.z;\n          float z = p_x1.y - p_x0.y - p_y1.x + p_y0.x;\n\n          const float divisor = 1.0 / ( 2.0 * e );\n          return normalize( vec3( x , y , z ) * divisor );\n\n        }\n    uniform bool display;\n    void main() {\n        vec2 uv = vUv;\n        vec3 noise = curlNoise(vec3(vPos.xy*noiseSeed,time))*noiseScale;\n        vec3 color = texture2D( texture, vUv+noise.xy ).rgb;\n\n        gl_FragColor = vec4( color, 1.0 );\n\n\n        if(!display)\n        {\n            discard;\n        }\n    }"
+
+/***/ }),
+/* 19 */
+/***/ (function(module, exports) {
+
+module.exports = "\n    vec3 mod289(vec3 x) {\n        return x - floor(x * (1.0 / 289.0)) * 289.0;\n    }\n\n    vec4 mod289(vec4 x) {\n        return x - floor(x * (1.0 / 289.0)) * 289.0;\n    }\n\n    vec4 permute(vec4 x) {\n        return mod289(((x*34.0)+1.0)*x);\n    }\n\n    vec4 taylorInvSqrt(vec4 r)\n    {\n    return 1.79284291400159 - 0.85373472095314 * r;\n    }\n\n    float snoise(vec3 v)\n    {\n        const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;\n        const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);\n\n    // First corner\n      vec3 i  = floor(v + dot(v, C.yyy) );\n      vec3 x0 =   v - i + dot(i, C.xxx) ;\n\n    // Other corners\n      vec3 g = step(x0.yzx, x0.xyz);\n      vec3 l = 1.0 - g;\n      vec3 i1 = min( g.xyz, l.zxy );\n      vec3 i2 = max( g.xyz, l.zxy );\n\n      //   x0 = x0 - 0.0 + 0.0 * C.xxx;\n      //   x1 = x0 - i1  + 1.0 * C.xxx;\n      //   x2 = x0 - i2  + 2.0 * C.xxx;\n      //   x3 = x0 - 1.0 + 3.0 * C.xxx;\n      vec3 x1 = x0 - i1 + C.xxx;\n      vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y\n      vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y\n\n    // Permutations\n      i = mod289(i);\n      vec4 p = permute( permute( permute(\n                 i.z + vec4(0.0, i1.z, i2.z, 1.0 ))\n               + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))\n               + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));\n\n    // Gradients: 7x7 points over a square, mapped onto an octahedron.\n    // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)\n      float n_ = 0.142857142857; // 1.0/7.0\n      vec3  ns = n_ * D.wyz - D.xzx;\n\n      vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)\n\n      vec4 x_ = floor(j * ns.z);\n      vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)\n\n      vec4 x = x_ *ns.x + ns.yyyy;\n      vec4 y = y_ *ns.x + ns.yyyy;\n      vec4 h = 1.0 - abs(x) - abs(y);\n\n      vec4 b0 = vec4( x.xy, y.xy );\n      vec4 b1 = vec4( x.zw, y.zw );\n\n      //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;\n      //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;\n      vec4 s0 = floor(b0)*2.0 + 1.0;\n      vec4 s1 = floor(b1)*2.0 + 1.0;\n      vec4 sh = -step(h, vec4(0.0));\n\n      vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;\n      vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;\n\n      vec3 p0 = vec3(a0.xy,h.x);\n      vec3 p1 = vec3(a0.zw,h.y);\n      vec3 p2 = vec3(a1.xy,h.z);\n      vec3 p3 = vec3(a1.zw,h.w);\n\n    //Normalise gradients\n      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));\n      p0 *= norm.x;\n      p1 *= norm.y;\n      p2 *= norm.z;\n      p3 *= norm.w;\n\n    // Mix final noise value\n      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);\n      m = m * m;\n      return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),\n                                    dot(p2,x2), dot(p3,x3) ) );\n      }\n\n    vec3 snoiseVec3( vec3 x ){\n\n        float s  = snoise(vec3( x ));\n        float s1 = snoise(vec3( x.y - 19.1 , x.z + 33.4 , x.x + 47.2 ));\n        float s2 = snoise(vec3( x.z + 74.2 , x.x - 124.5 , x.y + 99.4 ));\n        vec3 c = vec3( s , s1 , s2 );\n        return c;\n\n    }\n\n\n    vec3 curlNoise( vec3 p ){\n\n        const float e = .1;\n        vec3 dx = vec3( e   , 0.0 , 0.0 );\n        vec3 dy = vec3( 0.0 , e   , 0.0 );\n        vec3 dz = vec3( 0.0 , 0.0 , e   );\n\n        vec3 p_x0 = snoiseVec3( p - dx );\n        vec3 p_x1 = snoiseVec3( p + dx );\n        vec3 p_y0 = snoiseVec3( p - dy );\n        vec3 p_y1 = snoiseVec3( p + dy );\n        vec3 p_z0 = snoiseVec3( p - dz );\n        vec3 p_z1 = snoiseVec3( p + dz );\n\n        float x = p_y1.z - p_y0.z - p_z1.y + p_z0.y;\n        float y = p_z1.x - p_z0.x - p_x1.z + p_x0.z;\n        float z = p_x1.y - p_x0.y - p_y1.x + p_y0.x;\n\n        const float divisor = 1.0 / ( 2.0 * e );\n        return normalize( vec3( x , y , z ) * divisor );\n\n    }\n    varying vec2 vUv;\n    uniform float time;\n    varying vec3 vPos;\n    uniform float noiseScale;\n    uniform float noiseSeed;\n    uniform float time_scale_vertex;\n    uniform float noiseSeed_vertex;\n    uniform float noiseScale_vertex;\n    uniform float distance_threshold;\n    void main() {\n\n       float d = distance(position.xyz,vec3(0,0,0));\n\n\n       if(d > distance_threshold)\n       {\n         d = 0.0;\n       } else\n       {\n        d = distance_threshold - d;\n       }\n\n       d *= 5.0;\n\n       float height = snoise(vec3(position.xy*noiseSeed_vertex,time*time_scale_vertex))*noiseScale_vertex;\n       vec3 _position = position;\n       _position.z -= abs(d*(height));\n       vec4 mvPosition = modelViewMatrix * vec4( _position, 1.0 );\n       vPos = _position;\n       vUv = uv;\n       gl_Position = projectionMatrix * mvPosition;\n       }"
+
+/***/ }),
+/* 20 */
+/***/ (function(module, exports) {
+
+module.exports = "data:image/png;base64,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"
+
+/***/ }),
+/* 21 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * VERSION: 1.20.2
+ * DATE: 2017-06-30
+ * UPDATES AND DOCS AT: http://greensock.com
+ *
+ * @license Copyright (c) 2008-2017, GreenSock. All rights reserved.
+ * This work is subject to the terms at http://greensock.com/standard-license or for
+ * Club GreenSock members, the software agreement that was issued with your membership.
+ * 
+ * @author: Jack Doyle, jack@greensock.com
+ */
+var _gsScope = (typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window; //helps ensure compatibility with AMD/RequireJS and CommonJS/Node
+(_gsScope._gsQueue || (_gsScope._gsQueue = [])).push( function() {
+
+	"use strict";
+
+	_gsScope._gsDefine("TimelineMax", ["TimelineLite","TweenLite","easing.Ease"], function(TimelineLite, TweenLite, Ease) {
+		
+		var TimelineMax = function(vars) {
+				TimelineLite.call(this, vars);
+				this._repeat = this.vars.repeat || 0;
+				this._repeatDelay = this.vars.repeatDelay || 0;
+				this._cycle = 0;
+				this._yoyo = (this.vars.yoyo === true);
+				this._dirty = true;
+			},
+			_tinyNum = 0.0000000001,
+			TweenLiteInternals = TweenLite._internals,
+			_lazyTweens = TweenLiteInternals.lazyTweens,
+			_lazyRender = TweenLiteInternals.lazyRender,
+			_globals = _gsScope._gsDefine.globals,
+			_easeNone = new Ease(null, null, 1, 0),
+			p = TimelineMax.prototype = new TimelineLite();
+			
+		p.constructor = TimelineMax;
+		p.kill()._gc = false;
+		TimelineMax.version = "1.20.2";
+		
+		p.invalidate = function() {
+			this._yoyo = (this.vars.yoyo === true);
+			this._repeat = this.vars.repeat || 0;
+			this._repeatDelay = this.vars.repeatDelay || 0;
+			this._uncache(true);
+			return TimelineLite.prototype.invalidate.call(this);
+		};
+		
+		p.addCallback = function(callback, position, params, scope) {
+			return this.add( TweenLite.delayedCall(0, callback, params, scope), position);
+		};
+		
+		p.removeCallback = function(callback, position) {
+			if (callback) {
+				if (position == null) {
+					this._kill(null, callback);
+				} else {
+					var a = this.getTweensOf(callback, false),
+						i = a.length,
+						time = this._parseTimeOrLabel(position);
+					while (--i > -1) {
+						if (a[i]._startTime === time) {
+							a[i]._enabled(false, false);
+						}
+					}
+				}
+			}
+			return this;
+		};
+
+		p.removePause = function(position) {
+			return this.removeCallback(TimelineLite._internals.pauseCallback, position);
+		};
+		
+		p.tweenTo = function(position, vars) {
+			vars = vars || {};
+			var copy = {ease:_easeNone, useFrames:this.usesFrames(), immediateRender:false},
+				Engine = (vars.repeat && _globals.TweenMax) || TweenLite,
+				duration, p, t;
+			for (p in vars) {
+				copy[p] = vars[p];
+			}
+			copy.time = this._parseTimeOrLabel(position);
+			duration = (Math.abs(Number(copy.time) - this._time) / this._timeScale) || 0.001;
+			t = new Engine(this, duration, copy);
+			copy.onStart = function() {
+				t.target.paused(true);
+				if (t.vars.time !== t.target.time() && duration === t.duration()) { //don't make the duration zero - if it's supposed to be zero, don't worry because it's already initting the tween and will complete immediately, effectively making the duration zero anyway. If we make duration zero, the tween won't run at all.
+					t.duration( Math.abs( t.vars.time - t.target.time()) / t.target._timeScale );
+				}
+				if (vars.onStart) { //in case the user had an onStart in the vars - we don't want to overwrite it.
+					vars.onStart.apply(vars.onStartScope || vars.callbackScope || t, vars.onStartParams || []); //don't use t._callback("onStart") or it'll point to the copy.onStart and we'll get a recursion error.
+				}
+			};
+			return t;
+		};
+		
+		p.tweenFromTo = function(fromPosition, toPosition, vars) {
+			vars = vars || {};
+			fromPosition = this._parseTimeOrLabel(fromPosition);
+			vars.startAt = {onComplete:this.seek, onCompleteParams:[fromPosition], callbackScope:this};
+			vars.immediateRender = (vars.immediateRender !== false);
+			var t = this.tweenTo(toPosition, vars);
+			return t.duration((Math.abs( t.vars.time - fromPosition) / this._timeScale) || 0.001);
+		};
+		
+		p.render = function(time, suppressEvents, force) {
+			if (this._gc) {
+				this._enabled(true, false);
+			}
+			var totalDur = (!this._dirty) ? this._totalDuration : this.totalDuration(),
+				dur = this._duration,
+				prevTime = this._time, 
+				prevTotalTime = this._totalTime, 
+				prevStart = this._startTime, 
+				prevTimeScale = this._timeScale, 
+				prevRawPrevTime = this._rawPrevTime,
+				prevPaused = this._paused, 
+				prevCycle = this._cycle, 
+				tween, isComplete, next, callback, internalForce, cycleDuration, pauseTween, curTime;
+			if (time >= totalDur - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				if (!this._locked) {
+					this._totalTime = totalDur;
+					this._cycle = this._repeat;
+				}
+				if (!this._reversed) if (!this._hasPausedChild()) {
+					isComplete = true;
+					callback = "onComplete";
+					internalForce = !!this._timeline.autoRemoveChildren; //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+					if (this._duration === 0) if ((time <= 0 && time >= -0.0000001) || prevRawPrevTime < 0 || prevRawPrevTime === _tinyNum) if (prevRawPrevTime !== time && this._first) {
+						internalForce = true;
+						if (prevRawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+				}
+				this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				if (this._yoyo && (this._cycle & 1) !== 0) {
+					this._time = time = 0;
+				} else {
+					this._time = dur;
+					time = dur + 0.0001; //to avoid occasional floating point rounding errors - sometimes child tweens/timelines were not being fully completed (their progress might be 0.999999999999998 instead of 1 because when _time - tween._startTime is performed, floating point errors would return a value that was SLIGHTLY off). Try (999999999999.7 - 999999999999) * 1 = 0.699951171875 instead of 0.7. We cannot do less then 0.0001 because the same issue can occur when the duration is extremely large like 999999999999 in which case adding 0.00000001, for example, causes it to act like nothing was added.
+				}
+				
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				if (!this._locked) {
+					this._totalTime = this._cycle = 0;
+				}
+				this._time = 0;
+				if (prevTime !== 0 || (dur === 0 && prevRawPrevTime !== _tinyNum && (prevRawPrevTime > 0 || (time < 0 && prevRawPrevTime >= 0)) && !this._locked)) { //edge case for checking time < 0 && prevRawPrevTime >= 0: a zero-duration fromTo() tween inside a zero-duration timeline (yeah, very rare)
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (this._timeline.autoRemoveChildren && this._reversed) {
+						internalForce = isComplete = true;
+						callback = "onReverseComplete";
+					} else if (prevRawPrevTime >= 0 && this._first) { //when going back beyond the start, force a render so that zero-duration tweens that sit at the very beginning render their start values properly. Otherwise, if the parent timeline's playhead lands exactly at this timeline's startTime, and then moves backwards, the zero-duration tweens at the beginning would still be at their end state.
+						internalForce = true;
+					}
+					this._rawPrevTime = time;
+				} else {
+					this._rawPrevTime = (dur || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					if (time === 0 && isComplete) { //if there's a zero-duration tween at the very beginning of a timeline and the playhead lands EXACTLY at time 0, that tween will correctly render its end values, but we need to keep the timeline alive for one more render so that the beginning values render properly as the parent's playhead keeps moving beyond the begining. Imagine obj.x starts at 0 and then we do tl.set(obj, {x:100}).to(obj, 1, {x:200}) and then later we tl.reverse()...the goal is to have obj.x revert to 0. If the playhead happens to land on exactly 0, without this chunk of code, it'd complete the timeline and remove it from the rendering queue (not good).
+						tween = this._first;
+						while (tween && tween._startTime === 0) {
+							if (!tween._duration) {
+								isComplete = false;
+							}
+							tween = tween._next;
+						}
+					}
+					time = 0; //to avoid occasional floating point rounding errors (could cause problems especially with zero-duration tweens at the very beginning of the timeline)
+					if (!this._initted) {
+						internalForce = true;
+					}
+				}
+				
+			} else {
+				if (dur === 0 && prevRawPrevTime < 0) { //without this, zero-duration repeating timelines (like with a simple callback nested at the very beginning and a repeatDelay) wouldn't render the first time through.
+					internalForce = true;
+				}
+				this._time = this._rawPrevTime = time;
+				if (!this._locked) {
+					this._totalTime = time;
+					if (this._repeat !== 0) {
+						cycleDuration = dur + this._repeatDelay;
+						this._cycle = (this._totalTime / cycleDuration) >> 0; //originally _totalTime % cycleDuration but floating point errors caused problems, so I normalized it. (4 % 0.8 should be 0 but it gets reported as 0.79999999!)
+						if (this._cycle !== 0) if (this._cycle === this._totalTime / cycleDuration && prevTotalTime <= time) {
+							this._cycle--; //otherwise when rendered exactly at the end time, it will act as though it is repeating (at the beginning)
+						}
+						this._time = this._totalTime - (this._cycle * cycleDuration);
+						if (this._yoyo) if ((this._cycle & 1) !== 0) {
+							this._time = dur - this._time;
+						}
+						if (this._time > dur) {
+							this._time = dur;
+							time = dur + 0.0001; //to avoid occasional floating point rounding error
+						} else if (this._time < 0) {
+							this._time = time = 0;
+						} else {
+							time = this._time;
+						}
+					}
+				}
+
+				if (this._hasPause && !this._forcingPlayhead && !suppressEvents) {
+					time = this._time;
+					if (time >= prevTime || (this._repeat && prevCycle !== this._cycle)) {
+						tween = this._first;
+						while (tween && tween._startTime <= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && !tween.ratio && !(tween._startTime === 0 && this._rawPrevTime === 0)) {
+								pauseTween = tween;
+							}
+							tween = tween._next;
+						}
+					} else {
+						tween = this._last;
+						while (tween && tween._startTime >= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && tween._rawPrevTime > 0) {
+								pauseTween = tween;
+							}
+							tween = tween._prev;
+						}
+					}
+					if (pauseTween && pauseTween._startTime < dur) {
+						this._time = time = pauseTween._startTime;
+						this._totalTime = time + (this._cycle * (this._totalDuration + this._repeatDelay));
+					}
+				}
+
+			}
+			
+			if (this._cycle !== prevCycle) if (!this._locked) {
+				/*
+				make sure children at the end/beginning of the timeline are rendered properly. If, for example, 
+				a 3-second long timeline rendered at 2.9 seconds previously, and now renders at 3.2 seconds (which
+				would get transated to 2.8 seconds if the timeline yoyos or 0.2 seconds if it just repeats), there
+				could be a callback or a short tween that's at 2.95 or 3 seconds in which wouldn't render. So 
+				we need to push the timeline to the end (and/or beginning depending on its yoyo value). Also we must
+				ensure that zero-duration tweens at the very beginning or end of the TimelineMax work. 
+				*/
+				var backwards = (this._yoyo && (prevCycle & 1) !== 0),
+					wrap = (backwards === (this._yoyo && (this._cycle & 1) !== 0)),
+					recTotalTime = this._totalTime,
+					recCycle = this._cycle,
+					recRawPrevTime = this._rawPrevTime,
+					recTime = this._time;
+				
+				this._totalTime = prevCycle * dur;
+				if (this._cycle < prevCycle) {
+					backwards = !backwards;
+				} else {
+					this._totalTime += dur;
+				}
+				this._time = prevTime; //temporarily revert _time so that render() renders the children in the correct order. Without this, tweens won't rewind correctly. We could arhictect things in a "cleaner" way by splitting out the rendering queue into a separate method but for performance reasons, we kept it all inside this method.
+				
+				this._rawPrevTime = (dur === 0) ? prevRawPrevTime - 0.0001 : prevRawPrevTime;
+				this._cycle = prevCycle;
+				this._locked = true; //prevents changes to totalTime and skips repeat/yoyo behavior when we recursively call render()
+				prevTime = (backwards) ? 0 : dur;
+				this.render(prevTime, suppressEvents, (dur === 0));
+				if (!suppressEvents) if (!this._gc) {
+					if (this.vars.onRepeat) {
+						this._cycle = recCycle; //in case the onRepeat alters the playhead or invalidates(), we shouldn't stay locked or use the previous cycle.
+						this._locked = false;
+						this._callback("onRepeat");
+					}
+				}
+				if (prevTime !== this._time) { //in case there's a callback like onComplete in a nested tween/timeline that changes the playhead position, like via seek(), we should just abort.
+					return;
+				}
+				if (wrap) {
+					this._cycle = prevCycle; //if there's an onRepeat, we reverted this above, so make sure it's set properly again. We also unlocked in that scenario, so reset that too.
+					this._locked = true;
+					prevTime = (backwards) ? dur + 0.0001 : -0.0001;
+					this.render(prevTime, true, false);
+				}
+				this._locked = false;
+				if (this._paused && !prevPaused) { //if the render() triggered callback that paused this timeline, we should abort (very rare, but possible)
+					return;
+				}
+				this._time = recTime;
+				this._totalTime = recTotalTime;
+				this._cycle = recCycle;
+				this._rawPrevTime = recRawPrevTime;
+			}
+
+			if ((this._time === prevTime || !this._first) && !force && !internalForce && !pauseTween) {
+				if (prevTotalTime !== this._totalTime) if (this._onUpdate) if (!suppressEvents) { //so that onUpdate fires even during the repeatDelay - as long as the totalTime changed, we should trigger onUpdate.
+					this._callback("onUpdate");
+				}
+				return;
+			} else if (!this._initted) {
+				this._initted = true;
+			}
+
+			if (!this._active) if (!this._paused && this._totalTime !== prevTotalTime && time > 0) {
+				this._active = true;  //so that if the user renders the timeline (as opposed to the parent timeline rendering it), it is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the timeline already finished but the user manually re-renders it as halfway done, for example.
+			}
+			
+			if (prevTotalTime === 0) if (this.vars.onStart) if (this._totalTime !== 0 || !this._totalDuration) if (!suppressEvents) {
+				this._callback("onStart");
+			}
+
+			curTime = this._time;
+			if (curTime >= prevTime) {
+				tween = this._first;
+				while (tween) {
+					next = tween._next; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= this._time && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			} else {
+				tween = this._last;
+				while (tween) {
+					next = tween._prev; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= prevTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							pauseTween = tween._prev; //the linked list is organized by _startTime, thus it's possible that a tween could start BEFORE the pause and end after it, in which case it would be positioned before the pause tween in the linked list, but we should render it before we pause() the timeline and cease rendering. This is only a concern when going in reverse.
+							while (pauseTween && pauseTween.endTime() > this._time) {
+								pauseTween.render( (pauseTween._reversed ? pauseTween.totalDuration() - ((time - pauseTween._startTime) * pauseTween._timeScale) : (time - pauseTween._startTime) * pauseTween._timeScale), suppressEvents, force);
+								pauseTween = pauseTween._prev;
+							}
+							pauseTween = null;
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			}
+			
+			if (this._onUpdate) if (!suppressEvents) {
+				if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onUpdate on a timeline that reports/checks tweened values.
+					_lazyRender();
+				}
+				this._callback("onUpdate");
+			}
+			if (callback) if (!this._locked) if (!this._gc) if (prevStart === this._startTime || prevTimeScale !== this._timeScale) if (this._time === 0 || totalDur >= this.totalDuration()) { //if one of the tweens that was rendered altered this timeline's startTime (like if an onComplete reversed the timeline), it probably isn't complete. If it is, don't worry, because whatever call altered the startTime would complete if it was necessary at the new time. The only exception is the timeScale property. Also check _gc because there's a chance that kill() could be called in an onUpdate
+				if (isComplete) {
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onComplete on a timeline that reports/checks tweened values.
+						_lazyRender();
+					}
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+			}
+		};
+		
+		p.getActive = function(nested, tweens, timelines) {
+			if (nested == null) {
+				nested = true;
+			}
+			if (tweens == null) {
+				tweens = true;
+			}
+			if (timelines == null) {
+				timelines = false;
+			}
+			var a = [], 
+				all = this.getChildren(nested, tweens, timelines), 
+				cnt = 0, 
+				l = all.length,
+				i, tween;
+			for (i = 0; i < l; i++) {
+				tween = all[i];
+				if (tween.isActive()) {
+					a[cnt++] = tween;
+				}
+			}
+			return a;
+		};
+		
+		
+		p.getLabelAfter = function(time) {
+			if (!time) if (time !== 0) { //faster than isNan()
+				time = this._time;
+			}
+			var labels = this.getLabelsArray(),
+				l = labels.length,
+				i;
+			for (i = 0; i < l; i++) {
+				if (labels[i].time > time) {
+					return labels[i].name;
+				}
+			}
+			return null;
+		};
+		
+		p.getLabelBefore = function(time) {
+			if (time == null) {
+				time = this._time;
+			}
+			var labels = this.getLabelsArray(),
+				i = labels.length;
+			while (--i > -1) {
+				if (labels[i].time < time) {
+					return labels[i].name;
+				}
+			}
+			return null;
+		};
+		
+		p.getLabelsArray = function() {
+			var a = [],
+				cnt = 0,
+				p;
+			for (p in this._labels) {
+				a[cnt++] = {time:this._labels[p], name:p};
+			}
+			a.sort(function(a,b) {
+				return a.time - b.time;
+			});
+			return a;
+		};
+
+		p.invalidate = function() {
+			this._locked = false; //unlock and set cycle in case invalidate() is called from inside an onRepeat
+			return TimelineLite.prototype.invalidate.call(this);
+		};
+
+		
+//---- GETTERS / SETTERS -------------------------------------------------------------------------------------------------------
+		
+		p.progress = function(value, suppressEvents) {
+			return (!arguments.length) ? (this._time / this.duration()) || 0 : this.totalTime( this.duration() * ((this._yoyo && (this._cycle & 1) !== 0) ? 1 - value : value) + (this._cycle * (this._duration + this._repeatDelay)), suppressEvents);
+		};
+		
+		p.totalProgress = function(value, suppressEvents) {
+			return (!arguments.length) ? (this._totalTime / this.totalDuration()) || 0 : this.totalTime( this.totalDuration() * value, suppressEvents);
+		};
+
+		p.totalDuration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					TimelineLite.prototype.totalDuration.call(this); //just forces refresh
+					//Instead of Infinity, we use 999999999999 so that we can accommodate reverses.
+					this._totalDuration = (this._repeat === -1) ? 999999999999 : this._duration * (this._repeat + 1) + (this._repeatDelay * this._repeat);
+				}
+				return this._totalDuration;
+			}
+			return (this._repeat === -1 || !value) ? this : this.timeScale( this.totalDuration() / value );
+		};
+		
+		p.time = function(value, suppressEvents) {
+			if (!arguments.length) {
+				return this._time;
+			}
+			if (this._dirty) {
+				this.totalDuration();
+			}
+			if (value > this._duration) {
+				value = this._duration;
+			}
+			if (this._yoyo && (this._cycle & 1) !== 0) {
+				value = (this._duration - value) + (this._cycle * (this._duration + this._repeatDelay));
+			} else if (this._repeat !== 0) {
+				value += this._cycle * (this._duration + this._repeatDelay);
+			}
+			return this.totalTime(value, suppressEvents);
+		};
+		
+		p.repeat = function(value) {
+			if (!arguments.length) {
+				return this._repeat;
+			}
+			this._repeat = value;
+			return this._uncache(true);
+		};
+		
+		p.repeatDelay = function(value) {
+			if (!arguments.length) {
+				return this._repeatDelay;
+			}
+			this._repeatDelay = value;
+			return this._uncache(true);
+		};
+		
+		p.yoyo = function(value) {
+			if (!arguments.length) {
+				return this._yoyo;
+			}
+			this._yoyo = value;
+			return this;
+		};
+		
+		p.currentLabel = function(value) {
+			if (!arguments.length) {
+				return this.getLabelBefore(this._time + 0.00000001);
+			}
+			return this.seek(value, true);
+		};
+		
+		return TimelineMax;
+		
+	}, true);
+
+
+
+
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * TimelineLite
+ * ----------------------------------------------------------------
+ */
+
+	_gsScope._gsDefine("TimelineLite", ["core.Animation","core.SimpleTimeline","TweenLite"], function(Animation, SimpleTimeline, TweenLite) {
+
+		var TimelineLite = function(vars) {
+				SimpleTimeline.call(this, vars);
+				this._labels = {};
+				this.autoRemoveChildren = (this.vars.autoRemoveChildren === true);
+				this.smoothChildTiming = (this.vars.smoothChildTiming === true);
+				this._sortChildren = true;
+				this._onUpdate = this.vars.onUpdate;
+				var v = this.vars,
+					val, p;
+				for (p in v) {
+					val = v[p];
+					if (_isArray(val)) if (val.join("").indexOf("{self}") !== -1) {
+						v[p] = this._swapSelfInParams(val);
+					}
+				}
+				if (_isArray(v.tweens)) {
+					this.add(v.tweens, 0, v.align, v.stagger);
+				}
+			},
+			_tinyNum = 0.0000000001,
+			TweenLiteInternals = TweenLite._internals,
+			_internals = TimelineLite._internals = {},
+			_isSelector = TweenLiteInternals.isSelector,
+			_isArray = TweenLiteInternals.isArray,
+			_lazyTweens = TweenLiteInternals.lazyTweens,
+			_lazyRender = TweenLiteInternals.lazyRender,
+			_globals = _gsScope._gsDefine.globals,
+			_copy = function(vars) {
+				var copy = {}, p;
+				for (p in vars) {
+					copy[p] = vars[p];
+				}
+				return copy;
+			},
+			_applyCycle = function(vars, targets, i) {
+				var alt = vars.cycle,
+					p, val;
+				for (p in alt) {
+					val = alt[p];
+					vars[p] = (typeof(val) === "function") ? val(i, targets[i]) : val[i % val.length];
+				}
+				delete vars.cycle;
+			},
+			_pauseCallback = _internals.pauseCallback = function() {},
+			_slice = function(a) { //don't use [].slice because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+				var b = [],
+					l = a.length,
+					i;
+				for (i = 0; i !== l; b.push(a[i++]));
+				return b;
+			},
+			p = TimelineLite.prototype = new SimpleTimeline();
+
+		TimelineLite.version = "1.20.2";
+		p.constructor = TimelineLite;
+		p.kill()._gc = p._forcingPlayhead = p._hasPause = false;
+
+		/* might use later...
+		//translates a local time inside an animation to the corresponding time on the root/global timeline, factoring in all nesting and timeScales.
+		function localToGlobal(time, animation) {
+			while (animation) {
+				time = (time / animation._timeScale) + animation._startTime;
+				animation = animation.timeline;
+			}
+			return time;
+		}
+
+		//translates the supplied time on the root/global timeline into the corresponding local time inside a particular animation, factoring in all nesting and timeScales
+		function globalToLocal(time, animation) {
+			var scale = 1;
+			time -= localToGlobal(0, animation);
+			while (animation) {
+				scale *= animation._timeScale;
+				animation = animation.timeline;
+			}
+			return time * scale;
+		}
+		*/
+
+		p.to = function(target, duration, vars, position) {
+			var Engine = (vars.repeat && _globals.TweenMax) || TweenLite;
+			return duration ? this.add( new Engine(target, duration, vars), position) : this.set(target, vars, position);
+		};
+
+		p.from = function(target, duration, vars, position) {
+			return this.add( ((vars.repeat && _globals.TweenMax) || TweenLite).from(target, duration, vars), position);
+		};
+
+		p.fromTo = function(target, duration, fromVars, toVars, position) {
+			var Engine = (toVars.repeat && _globals.TweenMax) || TweenLite;
+			return duration ? this.add( Engine.fromTo(target, duration, fromVars, toVars), position) : this.set(target, toVars, position);
+		};
+
+		p.staggerTo = function(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			var tl = new TimelineLite({onComplete:onCompleteAll, onCompleteParams:onCompleteAllParams, callbackScope:onCompleteAllScope, smoothChildTiming:this.smoothChildTiming}),
+				cycle = vars.cycle,
+				copy, i;
+			if (typeof(targets) === "string") {
+				targets = TweenLite.selector(targets) || targets;
+			}
+			targets = targets || [];
+			if (_isSelector(targets)) { //senses if the targets object is a selector. If it is, we should translate it into an array.
+				targets = _slice(targets);
+			}
+			stagger = stagger || 0;
+			if (stagger < 0) {
+				targets = _slice(targets);
+				targets.reverse();
+				stagger *= -1;
+			}
+			for (i = 0; i < targets.length; i++) {
+				copy = _copy(vars);
+				if (copy.startAt) {
+					copy.startAt = _copy(copy.startAt);
+					if (copy.startAt.cycle) {
+						_applyCycle(copy.startAt, targets, i);
+					}
+				}
+				if (cycle) {
+					_applyCycle(copy, targets, i);
+					if (copy.duration != null) {
+						duration = copy.duration;
+						delete copy.duration;
+					}
+				}
+				tl.to(targets[i], duration, copy, i * stagger);
+			}
+			return this.add(tl, position);
+		};
+
+		p.staggerFrom = function(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			vars.immediateRender = (vars.immediateRender != false);
+			vars.runBackwards = true;
+			return this.staggerTo(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+
+		p.staggerFromTo = function(targets, duration, fromVars, toVars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return this.staggerTo(targets, duration, toVars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+
+		p.call = function(callback, params, scope, position) {
+			return this.add( TweenLite.delayedCall(0, callback, params, scope), position);
+		};
+
+		p.set = function(target, vars, position) {
+			position = this._parseTimeOrLabel(position, 0, true);
+			if (vars.immediateRender == null) {
+				vars.immediateRender = (position === this._time && !this._paused);
+			}
+			return this.add( new TweenLite(target, 0, vars), position);
+		};
+
+		TimelineLite.exportRoot = function(vars, ignoreDelayedCalls) {
+			vars = vars || {};
+			if (vars.smoothChildTiming == null) {
+				vars.smoothChildTiming = true;
+			}
+			var tl = new TimelineLite(vars),
+				root = tl._timeline,
+				tween, next;
+			if (ignoreDelayedCalls == null) {
+				ignoreDelayedCalls = true;
+			}
+			root._remove(tl, true);
+			tl._startTime = 0;
+			tl._rawPrevTime = tl._time = tl._totalTime = root._time;
+			tween = root._first;
+			while (tween) {
+				next = tween._next;
+				if (!ignoreDelayedCalls || !(tween instanceof TweenLite && tween.target === tween.vars.onComplete)) {
+					tl.add(tween, tween._startTime - tween._delay);
+				}
+				tween = next;
+			}
+			root.add(tl, 0);
+			return tl;
+		};
+
+		p.add = function(value, position, align, stagger) {
+			var curTime, l, i, child, tl, beforeRawTime;
+			if (typeof(position) !== "number") {
+				position = this._parseTimeOrLabel(position, 0, true, value);
+			}
+			if (!(value instanceof Animation)) {
+				if ((value instanceof Array) || (value && value.push && _isArray(value))) {
+					align = align || "normal";
+					stagger = stagger || 0;
+					curTime = position;
+					l = value.length;
+					for (i = 0; i < l; i++) {
+						if (_isArray(child = value[i])) {
+							child = new TimelineLite({tweens:child});
+						}
+						this.add(child, curTime);
+						if (typeof(child) !== "string" && typeof(child) !== "function") {
+							if (align === "sequence") {
+								curTime = child._startTime + (child.totalDuration() / child._timeScale);
+							} else if (align === "start") {
+								child._startTime -= child.delay();
+							}
+						}
+						curTime += stagger;
+					}
+					return this._uncache(true);
+				} else if (typeof(value) === "string") {
+					return this.addLabel(value, position);
+				} else if (typeof(value) === "function") {
+					value = TweenLite.delayedCall(0, value);
+				} else {
+					throw("Cannot add " + value + " into the timeline; it is not a tween, timeline, function, or string.");
+				}
+			}
+
+			SimpleTimeline.prototype.add.call(this, value, position);
+
+			if (value._time) { //in case, for example, the _startTime is moved on a tween that has already rendered. Imagine it's at its end state, then the startTime is moved WAY later (after the end of this timeline), it should render at its beginning.
+				value.render((this.rawTime() - value._startTime) * value._timeScale, false, false);
+			}
+
+			//if the timeline has already ended but the inserted tween/timeline extends the duration, we should enable this timeline again so that it renders properly. We should also align the playhead with the parent timeline's when appropriate.
+			if (this._gc || this._time === this._duration) if (!this._paused) if (this._duration < this.duration()) {
+				//in case any of the ancestors had completed but should now be enabled...
+				tl = this;
+				beforeRawTime = (tl.rawTime() > value._startTime); //if the tween is placed on the timeline so that it starts BEFORE the current rawTime, we should align the playhead (move the timeline). This is because sometimes users will create a timeline, let it finish, and much later append a tween and expect it to run instead of jumping to its end state. While technically one could argue that it should jump to its end state, that's not what users intuitively expect.
+				while (tl._timeline) {
+					if (beforeRawTime && tl._timeline.smoothChildTiming) {
+						tl.totalTime(tl._totalTime, true); //moves the timeline (shifts its startTime) if necessary, and also enables it.
+					} else if (tl._gc) {
+						tl._enabled(true, false);
+					}
+					tl = tl._timeline;
+				}
+			}
+
+			return this;
+		};
+
+		p.remove = function(value) {
+			if (value instanceof Animation) {
+				this._remove(value, false);
+				var tl = value._timeline = value.vars.useFrames ? Animation._rootFramesTimeline : Animation._rootTimeline; //now that it's removed, default it to the root timeline so that if it gets played again, it doesn't jump back into this timeline.
+				value._startTime = (value._paused ? value._pauseTime : tl._time) - ((!value._reversed ? value._totalTime : value.totalDuration() - value._totalTime) / value._timeScale); //ensure that if it gets played again, the timing is correct.
+				return this;
+			} else if (value instanceof Array || (value && value.push && _isArray(value))) {
+				var i = value.length;
+				while (--i > -1) {
+					this.remove(value[i]);
+				}
+				return this;
+			} else if (typeof(value) === "string") {
+				return this.removeLabel(value);
+			}
+			return this.kill(null, value);
+		};
+
+		p._remove = function(tween, skipDisable) {
+			SimpleTimeline.prototype._remove.call(this, tween, skipDisable);
+			var last = this._last;
+			if (!last) {
+				this._time = this._totalTime = this._duration = this._totalDuration = 0;
+			} else if (this._time > this.duration()) {
+				this._time = this._duration;
+				this._totalTime = this._totalDuration;
+			}
+			return this;
+		};
+
+		p.append = function(value, offsetOrLabel) {
+			return this.add(value, this._parseTimeOrLabel(null, offsetOrLabel, true, value));
+		};
+
+		p.insert = p.insertMultiple = function(value, position, align, stagger) {
+			return this.add(value, position || 0, align, stagger);
+		};
+
+		p.appendMultiple = function(tweens, offsetOrLabel, align, stagger) {
+			return this.add(tweens, this._parseTimeOrLabel(null, offsetOrLabel, true, tweens), align, stagger);
+		};
+
+		p.addLabel = function(label, position) {
+			this._labels[label] = this._parseTimeOrLabel(position);
+			return this;
+		};
+
+		p.addPause = function(position, callback, params, scope) {
+			var t = TweenLite.delayedCall(0, _pauseCallback, params, scope || this);
+			t.vars.onComplete = t.vars.onReverseComplete = callback;
+			t.data = "isPause";
+			this._hasPause = true;
+			return this.add(t, position);
+		};
+
+		p.removeLabel = function(label) {
+			delete this._labels[label];
+			return this;
+		};
+
+		p.getLabelTime = function(label) {
+			return (this._labels[label] != null) ? this._labels[label] : -1;
+		};
+
+		p._parseTimeOrLabel = function(timeOrLabel, offsetOrLabel, appendIfAbsent, ignore) {
+			var clippedDuration, i;
+			//if we're about to add a tween/timeline (or an array of them) that's already a child of this timeline, we should remove it first so that it doesn't contaminate the duration().
+			if (ignore instanceof Animation && ignore.timeline === this) {
+				this.remove(ignore);
+			} else if (ignore && ((ignore instanceof Array) || (ignore.push && _isArray(ignore)))) {
+				i = ignore.length;
+				while (--i > -1) {
+					if (ignore[i] instanceof Animation && ignore[i].timeline === this) {
+						this.remove(ignore[i]);
+					}
+				}
+			}
+			clippedDuration = (this.duration() > 99999999999) ? this.recent().endTime(false) : this._duration; //in case there's a child that infinitely repeats, users almost never intend for the insertion point of a new child to be based on a SUPER long value like that so we clip it and assume the most recently-added child's endTime should be used instead.
+			if (typeof(offsetOrLabel) === "string") {
+				return this._parseTimeOrLabel(offsetOrLabel, (appendIfAbsent && typeof(timeOrLabel) === "number" && this._labels[offsetOrLabel] == null) ? timeOrLabel - clippedDuration : 0, appendIfAbsent);
+			}
+			offsetOrLabel = offsetOrLabel || 0;
+			if (typeof(timeOrLabel) === "string" && (isNaN(timeOrLabel) || this._labels[timeOrLabel] != null)) { //if the string is a number like "1", check to see if there's a label with that name, otherwise interpret it as a number (absolute value).
+				i = timeOrLabel.indexOf("=");
+				if (i === -1) {
+					if (this._labels[timeOrLabel] == null) {
+						return appendIfAbsent ? (this._labels[timeOrLabel] = clippedDuration + offsetOrLabel) : offsetOrLabel;
+					}
+					return this._labels[timeOrLabel] + offsetOrLabel;
+				}
+				offsetOrLabel = parseInt(timeOrLabel.charAt(i-1) + "1", 10) * Number(timeOrLabel.substr(i+1));
+				timeOrLabel = (i > 1) ? this._parseTimeOrLabel(timeOrLabel.substr(0, i-1), 0, appendIfAbsent) : clippedDuration;
+			} else if (timeOrLabel == null) {
+				timeOrLabel = clippedDuration;
+			}
+			return Number(timeOrLabel) + offsetOrLabel;
+		};
+
+		p.seek = function(position, suppressEvents) {
+			return this.totalTime((typeof(position) === "number") ? position : this._parseTimeOrLabel(position), (suppressEvents !== false));
+		};
+
+		p.stop = function() {
+			return this.paused(true);
+		};
+
+		p.gotoAndPlay = function(position, suppressEvents) {
+			return this.play(position, suppressEvents);
+		};
+
+		p.gotoAndStop = function(position, suppressEvents) {
+			return this.pause(position, suppressEvents);
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			if (this._gc) {
+				this._enabled(true, false);
+			}
+			var totalDur = (!this._dirty) ? this._totalDuration : this.totalDuration(),
+				prevTime = this._time,
+				prevStart = this._startTime,
+				prevTimeScale = this._timeScale,
+				prevPaused = this._paused,
+				tween, isComplete, next, callback, internalForce, pauseTween, curTime;
+			if (time >= totalDur - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				this._totalTime = this._time = totalDur;
+				if (!this._reversed) if (!this._hasPausedChild()) {
+					isComplete = true;
+					callback = "onComplete";
+					internalForce = !!this._timeline.autoRemoveChildren; //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+					if (this._duration === 0) if ((time <= 0 && time >= -0.0000001) || this._rawPrevTime < 0 || this._rawPrevTime === _tinyNum) if (this._rawPrevTime !== time && this._first) {
+						internalForce = true;
+						if (this._rawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+				}
+				this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				time = totalDur + 0.0001; //to avoid occasional floating point rounding errors - sometimes child tweens/timelines were not being fully completed (their progress might be 0.999999999999998 instead of 1 because when _time - tween._startTime is performed, floating point errors would return a value that was SLIGHTLY off). Try (999999999999.7 - 999999999999) * 1 = 0.699951171875 instead of 0.7.
+
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				this._totalTime = this._time = 0;
+				if (prevTime !== 0 || (this._duration === 0 && this._rawPrevTime !== _tinyNum && (this._rawPrevTime > 0 || (time < 0 && this._rawPrevTime >= 0)))) {
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (this._timeline.autoRemoveChildren && this._reversed) { //ensures proper GC if a timeline is resumed after it's finished reversing.
+						internalForce = isComplete = true;
+						callback = "onReverseComplete";
+					} else if (this._rawPrevTime >= 0 && this._first) { //when going back beyond the start, force a render so that zero-duration tweens that sit at the very beginning render their start values properly. Otherwise, if the parent timeline's playhead lands exactly at this timeline's startTime, and then moves backwards, the zero-duration tweens at the beginning would still be at their end state.
+						internalForce = true;
+					}
+					this._rawPrevTime = time;
+				} else {
+					this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					if (time === 0 && isComplete) { //if there's a zero-duration tween at the very beginning of a timeline and the playhead lands EXACTLY at time 0, that tween will correctly render its end values, but we need to keep the timeline alive for one more render so that the beginning values render properly as the parent's playhead keeps moving beyond the begining. Imagine obj.x starts at 0 and then we do tl.set(obj, {x:100}).to(obj, 1, {x:200}) and then later we tl.reverse()...the goal is to have obj.x revert to 0. If the playhead happens to land on exactly 0, without this chunk of code, it'd complete the timeline and remove it from the rendering queue (not good).
+						tween = this._first;
+						while (tween && tween._startTime === 0) {
+							if (!tween._duration) {
+								isComplete = false;
+							}
+							tween = tween._next;
+						}
+					}
+					time = 0; //to avoid occasional floating point rounding errors (could cause problems especially with zero-duration tweens at the very beginning of the timeline)
+					if (!this._initted) {
+						internalForce = true;
+					}
+				}
+
+			} else {
+
+				if (this._hasPause && !this._forcingPlayhead && !suppressEvents) {
+					if (time >= prevTime) {
+						tween = this._first;
+						while (tween && tween._startTime <= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && !tween.ratio && !(tween._startTime === 0 && this._rawPrevTime === 0)) {
+								pauseTween = tween;
+							}
+							tween = tween._next;
+						}
+					} else {
+						tween = this._last;
+						while (tween && tween._startTime >= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && tween._rawPrevTime > 0) {
+								pauseTween = tween;
+							}
+							tween = tween._prev;
+						}
+					}
+					if (pauseTween) {
+						this._time = time = pauseTween._startTime;
+						this._totalTime = time + (this._cycle * (this._totalDuration + this._repeatDelay));
+					}
+				}
+
+				this._totalTime = this._time = this._rawPrevTime = time;
+			}
+			if ((this._time === prevTime || !this._first) && !force && !internalForce && !pauseTween) {
+				return;
+			} else if (!this._initted) {
+				this._initted = true;
+			}
+
+			if (!this._active) if (!this._paused && this._time !== prevTime && time > 0) {
+				this._active = true;  //so that if the user renders the timeline (as opposed to the parent timeline rendering it), it is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the timeline already finished but the user manually re-renders it as halfway done, for example.
+			}
+
+			if (prevTime === 0) if (this.vars.onStart) if (this._time !== 0 || !this._duration) if (!suppressEvents) {
+				this._callback("onStart");
+			}
+
+			curTime = this._time;
+			if (curTime >= prevTime) {
+				tween = this._first;
+				while (tween) {
+					next = tween._next; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= curTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			} else {
+				tween = this._last;
+				while (tween) {
+					next = tween._prev; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= prevTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							pauseTween = tween._prev; //the linked list is organized by _startTime, thus it's possible that a tween could start BEFORE the pause and end after it, in which case it would be positioned before the pause tween in the linked list, but we should render it before we pause() the timeline and cease rendering. This is only a concern when going in reverse.
+							while (pauseTween && pauseTween.endTime() > this._time) {
+								pauseTween.render( (pauseTween._reversed ? pauseTween.totalDuration() - ((time - pauseTween._startTime) * pauseTween._timeScale) : (time - pauseTween._startTime) * pauseTween._timeScale), suppressEvents, force);
+								pauseTween = pauseTween._prev;
+							}
+							pauseTween = null;
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			}
+
+			if (this._onUpdate) if (!suppressEvents) {
+				if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onUpdate on a timeline that reports/checks tweened values.
+					_lazyRender();
+				}
+				this._callback("onUpdate");
+			}
+
+			if (callback) if (!this._gc) if (prevStart === this._startTime || prevTimeScale !== this._timeScale) if (this._time === 0 || totalDur >= this.totalDuration()) { //if one of the tweens that was rendered altered this timeline's startTime (like if an onComplete reversed the timeline), it probably isn't complete. If it is, don't worry, because whatever call altered the startTime would complete if it was necessary at the new time. The only exception is the timeScale property. Also check _gc because there's a chance that kill() could be called in an onUpdate
+				if (isComplete) {
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onComplete on a timeline that reports/checks tweened values.
+						_lazyRender();
+					}
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+			}
+		};
+
+		p._hasPausedChild = function() {
+			var tween = this._first;
+			while (tween) {
+				if (tween._paused || ((tween instanceof TimelineLite) && tween._hasPausedChild())) {
+					return true;
+				}
+				tween = tween._next;
+			}
+			return false;
+		};
+
+		p.getChildren = function(nested, tweens, timelines, ignoreBeforeTime) {
+			ignoreBeforeTime = ignoreBeforeTime || -9999999999;
+			var a = [],
+				tween = this._first,
+				cnt = 0;
+			while (tween) {
+				if (tween._startTime < ignoreBeforeTime) {
+					//do nothing
+				} else if (tween instanceof TweenLite) {
+					if (tweens !== false) {
+						a[cnt++] = tween;
+					}
+				} else {
+					if (timelines !== false) {
+						a[cnt++] = tween;
+					}
+					if (nested !== false) {
+						a = a.concat(tween.getChildren(true, tweens, timelines));
+						cnt = a.length;
+					}
+				}
+				tween = tween._next;
+			}
+			return a;
+		};
+
+		p.getTweensOf = function(target, nested) {
+			var disabled = this._gc,
+				a = [],
+				cnt = 0,
+				tweens, i;
+			if (disabled) {
+				this._enabled(true, true); //getTweensOf() filters out disabled tweens, and we have to mark them as _gc = true when the timeline completes in order to allow clean garbage collection, so temporarily re-enable the timeline here.
+			}
+			tweens = TweenLite.getTweensOf(target);
+			i = tweens.length;
+			while (--i > -1) {
+				if (tweens[i].timeline === this || (nested && this._contains(tweens[i]))) {
+					a[cnt++] = tweens[i];
+				}
+			}
+			if (disabled) {
+				this._enabled(false, true);
+			}
+			return a;
+		};
+
+		p.recent = function() {
+			return this._recent;
+		};
+
+		p._contains = function(tween) {
+			var tl = tween.timeline;
+			while (tl) {
+				if (tl === this) {
+					return true;
+				}
+				tl = tl.timeline;
+			}
+			return false;
+		};
+
+		p.shiftChildren = function(amount, adjustLabels, ignoreBeforeTime) {
+			ignoreBeforeTime = ignoreBeforeTime || 0;
+			var tween = this._first,
+				labels = this._labels,
+				p;
+			while (tween) {
+				if (tween._startTime >= ignoreBeforeTime) {
+					tween._startTime += amount;
+				}
+				tween = tween._next;
+			}
+			if (adjustLabels) {
+				for (p in labels) {
+					if (labels[p] >= ignoreBeforeTime) {
+						labels[p] += amount;
+					}
+				}
+			}
+			return this._uncache(true);
+		};
+
+		p._kill = function(vars, target) {
+			if (!vars && !target) {
+				return this._enabled(false, false);
+			}
+			var tweens = (!target) ? this.getChildren(true, true, false) : this.getTweensOf(target),
+				i = tweens.length,
+				changed = false;
+			while (--i > -1) {
+				if (tweens[i]._kill(vars, target)) {
+					changed = true;
+				}
+			}
+			return changed;
+		};
+
+		p.clear = function(labels) {
+			var tweens = this.getChildren(false, true, true),
+				i = tweens.length;
+			this._time = this._totalTime = 0;
+			while (--i > -1) {
+				tweens[i]._enabled(false, false);
+			}
+			if (labels !== false) {
+				this._labels = {};
+			}
+			return this._uncache(true);
+		};
+
+		p.invalidate = function() {
+			var tween = this._first;
+			while (tween) {
+				tween.invalidate();
+				tween = tween._next;
+			}
+			return Animation.prototype.invalidate.call(this);;
+		};
+
+		p._enabled = function(enabled, ignoreTimeline) {
+			if (enabled === this._gc) {
+				var tween = this._first;
+				while (tween) {
+					tween._enabled(enabled, true);
+					tween = tween._next;
+				}
+			}
+			return SimpleTimeline.prototype._enabled.call(this, enabled, ignoreTimeline);
+		};
+
+		p.totalTime = function(time, suppressEvents, uncapped) {
+			this._forcingPlayhead = true;
+			var val = Animation.prototype.totalTime.apply(this, arguments);
+			this._forcingPlayhead = false;
+			return val;
+		};
+
+		p.duration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					this.totalDuration(); //just triggers recalculation
+				}
+				return this._duration;
+			}
+			if (this.duration() !== 0 && value !== 0) {
+				this.timeScale(this._duration / value);
+			}
+			return this;
+		};
+
+		p.totalDuration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					var max = 0,
+						tween = this._last,
+						prevStart = 999999999999,
+						prev, end;
+					while (tween) {
+						prev = tween._prev; //record it here in case the tween changes position in the sequence...
+						if (tween._dirty) {
+							tween.totalDuration(); //could change the tween._startTime, so make sure the tween's cache is clean before analyzing it.
+						}
+						if (tween._startTime > prevStart && this._sortChildren && !tween._paused) { //in case one of the tweens shifted out of order, it needs to be re-inserted into the correct position in the sequence
+							this.add(tween, tween._startTime - tween._delay);
+						} else {
+							prevStart = tween._startTime;
+						}
+						if (tween._startTime < 0 && !tween._paused) { //children aren't allowed to have negative startTimes unless smoothChildTiming is true, so adjust here if one is found.
+							max -= tween._startTime;
+							if (this._timeline.smoothChildTiming) {
+								this._startTime += tween._startTime / this._timeScale;
+							}
+							this.shiftChildren(-tween._startTime, false, -9999999999);
+							prevStart = 0;
+						}
+						end = tween._startTime + (tween._totalDuration / tween._timeScale);
+						if (end > max) {
+							max = end;
+						}
+						tween = prev;
+					}
+					this._duration = this._totalDuration = max;
+					this._dirty = false;
+				}
+				return this._totalDuration;
+			}
+			return (value && this.totalDuration()) ? this.timeScale(this._totalDuration / value) : this;
+		};
+
+		p.paused = function(value) {
+			if (!value) { //if there's a pause directly at the spot from where we're unpausing, skip it.
+				var tween = this._first,
+					time = this._time;
+				while (tween) {
+					if (tween._startTime === time && tween.data === "isPause") {
+						tween._rawPrevTime = 0; //remember, _rawPrevTime is how zero-duration tweens/callbacks sense directionality and determine whether or not to fire. If _rawPrevTime is the same as _startTime on the next render, it won't fire.
+					}
+					tween = tween._next;
+				}
+			}
+			return Animation.prototype.paused.apply(this, arguments);
+		};
+
+		p.usesFrames = function() {
+			var tl = this._timeline;
+			while (tl._timeline) {
+				tl = tl._timeline;
+			}
+			return (tl === Animation._rootFramesTimeline);
+		};
+
+		p.rawTime = function(wrapRepeats) {
+			return (wrapRepeats && (this._paused || (this._repeat && this.time() > 0 && this.totalProgress() < 1))) ? this._totalTime % (this._duration + this._repeatDelay) : this._paused ? this._totalTime : (this._timeline.rawTime(wrapRepeats) - this._startTime) * this._timeScale;
+		};
+
+		return TimelineLite;
+
+	}, true);
+
+}); if (_gsScope._gsDefine) { _gsScope._gsQueue.pop()(); }
+
+//export to AMD/RequireJS and CommonJS/Node (precursor to full modular build system coming at a later date)
+(function(name) {
+	"use strict";
+	var getGlobal = function() {
+		return (_gsScope.GreenSockGlobals || _gsScope)[name];
+	};
+	if (typeof(module) !== "undefined" && module.exports) { //node
+		__webpack_require__(1); //dependency
+		module.exports = getGlobal();
+	} else if (true) { //AMD
+		!(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(1)], __WEBPACK_AMD_DEFINE_FACTORY__ = (getGlobal),
+				__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+				(__WEBPACK_AMD_DEFINE_FACTORY__.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__)) : __WEBPACK_AMD_DEFINE_FACTORY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+	}
+}("TimelineMax"));
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2)))
+
+/***/ }),
+/* 22 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * VERSION: 1.20.2
+ * DATE: 2017-06-30
+ * UPDATES AND DOCS AT: http://greensock.com
+ *
+ * @license Copyright (c) 2008-2017, GreenSock. All rights reserved.
+ * This work is subject to the terms at http://greensock.com/standard-license or for
+ * Club GreenSock members, the software agreement that was issued with your membership.
+ * 
+ * @author: Jack Doyle, jack@greensock.com
+ */
+var _gsScope = (typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window; //helps ensure compatibility with AMD/RequireJS and CommonJS/Node
+(_gsScope._gsQueue || (_gsScope._gsQueue = [])).push( function() {
+
+	"use strict";
+
+	_gsScope._gsDefine("TimelineLite", ["core.Animation","core.SimpleTimeline","TweenLite"], function(Animation, SimpleTimeline, TweenLite) {
+
+		var TimelineLite = function(vars) {
+				SimpleTimeline.call(this, vars);
+				this._labels = {};
+				this.autoRemoveChildren = (this.vars.autoRemoveChildren === true);
+				this.smoothChildTiming = (this.vars.smoothChildTiming === true);
+				this._sortChildren = true;
+				this._onUpdate = this.vars.onUpdate;
+				var v = this.vars,
+					val, p;
+				for (p in v) {
+					val = v[p];
+					if (_isArray(val)) if (val.join("").indexOf("{self}") !== -1) {
+						v[p] = this._swapSelfInParams(val);
+					}
+				}
+				if (_isArray(v.tweens)) {
+					this.add(v.tweens, 0, v.align, v.stagger);
+				}
+			},
+			_tinyNum = 0.0000000001,
+			TweenLiteInternals = TweenLite._internals,
+			_internals = TimelineLite._internals = {},
+			_isSelector = TweenLiteInternals.isSelector,
+			_isArray = TweenLiteInternals.isArray,
+			_lazyTweens = TweenLiteInternals.lazyTweens,
+			_lazyRender = TweenLiteInternals.lazyRender,
+			_globals = _gsScope._gsDefine.globals,
+			_copy = function(vars) {
+				var copy = {}, p;
+				for (p in vars) {
+					copy[p] = vars[p];
+				}
+				return copy;
+			},
+			_applyCycle = function(vars, targets, i) {
+				var alt = vars.cycle,
+					p, val;
+				for (p in alt) {
+					val = alt[p];
+					vars[p] = (typeof(val) === "function") ? val(i, targets[i]) : val[i % val.length];
+				}
+				delete vars.cycle;
+			},
+			_pauseCallback = _internals.pauseCallback = function() {},
+			_slice = function(a) { //don't use [].slice because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+				var b = [],
+					l = a.length,
+					i;
+				for (i = 0; i !== l; b.push(a[i++]));
+				return b;
+			},
+			p = TimelineLite.prototype = new SimpleTimeline();
+
+		TimelineLite.version = "1.20.2";
+		p.constructor = TimelineLite;
+		p.kill()._gc = p._forcingPlayhead = p._hasPause = false;
+
+		/* might use later...
+		//translates a local time inside an animation to the corresponding time on the root/global timeline, factoring in all nesting and timeScales.
+		function localToGlobal(time, animation) {
+			while (animation) {
+				time = (time / animation._timeScale) + animation._startTime;
+				animation = animation.timeline;
+			}
+			return time;
+		}
+
+		//translates the supplied time on the root/global timeline into the corresponding local time inside a particular animation, factoring in all nesting and timeScales
+		function globalToLocal(time, animation) {
+			var scale = 1;
+			time -= localToGlobal(0, animation);
+			while (animation) {
+				scale *= animation._timeScale;
+				animation = animation.timeline;
+			}
+			return time * scale;
+		}
+		*/
+
+		p.to = function(target, duration, vars, position) {
+			var Engine = (vars.repeat && _globals.TweenMax) || TweenLite;
+			return duration ? this.add( new Engine(target, duration, vars), position) : this.set(target, vars, position);
+		};
+
+		p.from = function(target, duration, vars, position) {
+			return this.add( ((vars.repeat && _globals.TweenMax) || TweenLite).from(target, duration, vars), position);
+		};
+
+		p.fromTo = function(target, duration, fromVars, toVars, position) {
+			var Engine = (toVars.repeat && _globals.TweenMax) || TweenLite;
+			return duration ? this.add( Engine.fromTo(target, duration, fromVars, toVars), position) : this.set(target, toVars, position);
+		};
+
+		p.staggerTo = function(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			var tl = new TimelineLite({onComplete:onCompleteAll, onCompleteParams:onCompleteAllParams, callbackScope:onCompleteAllScope, smoothChildTiming:this.smoothChildTiming}),
+				cycle = vars.cycle,
+				copy, i;
+			if (typeof(targets) === "string") {
+				targets = TweenLite.selector(targets) || targets;
+			}
+			targets = targets || [];
+			if (_isSelector(targets)) { //senses if the targets object is a selector. If it is, we should translate it into an array.
+				targets = _slice(targets);
+			}
+			stagger = stagger || 0;
+			if (stagger < 0) {
+				targets = _slice(targets);
+				targets.reverse();
+				stagger *= -1;
+			}
+			for (i = 0; i < targets.length; i++) {
+				copy = _copy(vars);
+				if (copy.startAt) {
+					copy.startAt = _copy(copy.startAt);
+					if (copy.startAt.cycle) {
+						_applyCycle(copy.startAt, targets, i);
+					}
+				}
+				if (cycle) {
+					_applyCycle(copy, targets, i);
+					if (copy.duration != null) {
+						duration = copy.duration;
+						delete copy.duration;
+					}
+				}
+				tl.to(targets[i], duration, copy, i * stagger);
+			}
+			return this.add(tl, position);
+		};
+
+		p.staggerFrom = function(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			vars.immediateRender = (vars.immediateRender != false);
+			vars.runBackwards = true;
+			return this.staggerTo(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+
+		p.staggerFromTo = function(targets, duration, fromVars, toVars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return this.staggerTo(targets, duration, toVars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+
+		p.call = function(callback, params, scope, position) {
+			return this.add( TweenLite.delayedCall(0, callback, params, scope), position);
+		};
+
+		p.set = function(target, vars, position) {
+			position = this._parseTimeOrLabel(position, 0, true);
+			if (vars.immediateRender == null) {
+				vars.immediateRender = (position === this._time && !this._paused);
+			}
+			return this.add( new TweenLite(target, 0, vars), position);
+		};
+
+		TimelineLite.exportRoot = function(vars, ignoreDelayedCalls) {
+			vars = vars || {};
+			if (vars.smoothChildTiming == null) {
+				vars.smoothChildTiming = true;
+			}
+			var tl = new TimelineLite(vars),
+				root = tl._timeline,
+				tween, next;
+			if (ignoreDelayedCalls == null) {
+				ignoreDelayedCalls = true;
+			}
+			root._remove(tl, true);
+			tl._startTime = 0;
+			tl._rawPrevTime = tl._time = tl._totalTime = root._time;
+			tween = root._first;
+			while (tween) {
+				next = tween._next;
+				if (!ignoreDelayedCalls || !(tween instanceof TweenLite && tween.target === tween.vars.onComplete)) {
+					tl.add(tween, tween._startTime - tween._delay);
+				}
+				tween = next;
+			}
+			root.add(tl, 0);
+			return tl;
+		};
+
+		p.add = function(value, position, align, stagger) {
+			var curTime, l, i, child, tl, beforeRawTime;
+			if (typeof(position) !== "number") {
+				position = this._parseTimeOrLabel(position, 0, true, value);
+			}
+			if (!(value instanceof Animation)) {
+				if ((value instanceof Array) || (value && value.push && _isArray(value))) {
+					align = align || "normal";
+					stagger = stagger || 0;
+					curTime = position;
+					l = value.length;
+					for (i = 0; i < l; i++) {
+						if (_isArray(child = value[i])) {
+							child = new TimelineLite({tweens:child});
+						}
+						this.add(child, curTime);
+						if (typeof(child) !== "string" && typeof(child) !== "function") {
+							if (align === "sequence") {
+								curTime = child._startTime + (child.totalDuration() / child._timeScale);
+							} else if (align === "start") {
+								child._startTime -= child.delay();
+							}
+						}
+						curTime += stagger;
+					}
+					return this._uncache(true);
+				} else if (typeof(value) === "string") {
+					return this.addLabel(value, position);
+				} else if (typeof(value) === "function") {
+					value = TweenLite.delayedCall(0, value);
+				} else {
+					throw("Cannot add " + value + " into the timeline; it is not a tween, timeline, function, or string.");
+				}
+			}
+
+			SimpleTimeline.prototype.add.call(this, value, position);
+
+			if (value._time) { //in case, for example, the _startTime is moved on a tween that has already rendered. Imagine it's at its end state, then the startTime is moved WAY later (after the end of this timeline), it should render at its beginning.
+				value.render((this.rawTime() - value._startTime) * value._timeScale, false, false);
+			}
+
+			//if the timeline has already ended but the inserted tween/timeline extends the duration, we should enable this timeline again so that it renders properly. We should also align the playhead with the parent timeline's when appropriate.
+			if (this._gc || this._time === this._duration) if (!this._paused) if (this._duration < this.duration()) {
+				//in case any of the ancestors had completed but should now be enabled...
+				tl = this;
+				beforeRawTime = (tl.rawTime() > value._startTime); //if the tween is placed on the timeline so that it starts BEFORE the current rawTime, we should align the playhead (move the timeline). This is because sometimes users will create a timeline, let it finish, and much later append a tween and expect it to run instead of jumping to its end state. While technically one could argue that it should jump to its end state, that's not what users intuitively expect.
+				while (tl._timeline) {
+					if (beforeRawTime && tl._timeline.smoothChildTiming) {
+						tl.totalTime(tl._totalTime, true); //moves the timeline (shifts its startTime) if necessary, and also enables it.
+					} else if (tl._gc) {
+						tl._enabled(true, false);
+					}
+					tl = tl._timeline;
+				}
+			}
+
+			return this;
+		};
+
+		p.remove = function(value) {
+			if (value instanceof Animation) {
+				this._remove(value, false);
+				var tl = value._timeline = value.vars.useFrames ? Animation._rootFramesTimeline : Animation._rootTimeline; //now that it's removed, default it to the root timeline so that if it gets played again, it doesn't jump back into this timeline.
+				value._startTime = (value._paused ? value._pauseTime : tl._time) - ((!value._reversed ? value._totalTime : value.totalDuration() - value._totalTime) / value._timeScale); //ensure that if it gets played again, the timing is correct.
+				return this;
+			} else if (value instanceof Array || (value && value.push && _isArray(value))) {
+				var i = value.length;
+				while (--i > -1) {
+					this.remove(value[i]);
+				}
+				return this;
+			} else if (typeof(value) === "string") {
+				return this.removeLabel(value);
+			}
+			return this.kill(null, value);
+		};
+
+		p._remove = function(tween, skipDisable) {
+			SimpleTimeline.prototype._remove.call(this, tween, skipDisable);
+			var last = this._last;
+			if (!last) {
+				this._time = this._totalTime = this._duration = this._totalDuration = 0;
+			} else if (this._time > this.duration()) {
+				this._time = this._duration;
+				this._totalTime = this._totalDuration;
+			}
+			return this;
+		};
+
+		p.append = function(value, offsetOrLabel) {
+			return this.add(value, this._parseTimeOrLabel(null, offsetOrLabel, true, value));
+		};
+
+		p.insert = p.insertMultiple = function(value, position, align, stagger) {
+			return this.add(value, position || 0, align, stagger);
+		};
+
+		p.appendMultiple = function(tweens, offsetOrLabel, align, stagger) {
+			return this.add(tweens, this._parseTimeOrLabel(null, offsetOrLabel, true, tweens), align, stagger);
+		};
+
+		p.addLabel = function(label, position) {
+			this._labels[label] = this._parseTimeOrLabel(position);
+			return this;
+		};
+
+		p.addPause = function(position, callback, params, scope) {
+			var t = TweenLite.delayedCall(0, _pauseCallback, params, scope || this);
+			t.vars.onComplete = t.vars.onReverseComplete = callback;
+			t.data = "isPause";
+			this._hasPause = true;
+			return this.add(t, position);
+		};
+
+		p.removeLabel = function(label) {
+			delete this._labels[label];
+			return this;
+		};
+
+		p.getLabelTime = function(label) {
+			return (this._labels[label] != null) ? this._labels[label] : -1;
+		};
+
+		p._parseTimeOrLabel = function(timeOrLabel, offsetOrLabel, appendIfAbsent, ignore) {
+			var clippedDuration, i;
+			//if we're about to add a tween/timeline (or an array of them) that's already a child of this timeline, we should remove it first so that it doesn't contaminate the duration().
+			if (ignore instanceof Animation && ignore.timeline === this) {
+				this.remove(ignore);
+			} else if (ignore && ((ignore instanceof Array) || (ignore.push && _isArray(ignore)))) {
+				i = ignore.length;
+				while (--i > -1) {
+					if (ignore[i] instanceof Animation && ignore[i].timeline === this) {
+						this.remove(ignore[i]);
+					}
+				}
+			}
+			clippedDuration = (this.duration() > 99999999999) ? this.recent().endTime(false) : this._duration; //in case there's a child that infinitely repeats, users almost never intend for the insertion point of a new child to be based on a SUPER long value like that so we clip it and assume the most recently-added child's endTime should be used instead.
+			if (typeof(offsetOrLabel) === "string") {
+				return this._parseTimeOrLabel(offsetOrLabel, (appendIfAbsent && typeof(timeOrLabel) === "number" && this._labels[offsetOrLabel] == null) ? timeOrLabel - clippedDuration : 0, appendIfAbsent);
+			}
+			offsetOrLabel = offsetOrLabel || 0;
+			if (typeof(timeOrLabel) === "string" && (isNaN(timeOrLabel) || this._labels[timeOrLabel] != null)) { //if the string is a number like "1", check to see if there's a label with that name, otherwise interpret it as a number (absolute value).
+				i = timeOrLabel.indexOf("=");
+				if (i === -1) {
+					if (this._labels[timeOrLabel] == null) {
+						return appendIfAbsent ? (this._labels[timeOrLabel] = clippedDuration + offsetOrLabel) : offsetOrLabel;
+					}
+					return this._labels[timeOrLabel] + offsetOrLabel;
+				}
+				offsetOrLabel = parseInt(timeOrLabel.charAt(i-1) + "1", 10) * Number(timeOrLabel.substr(i+1));
+				timeOrLabel = (i > 1) ? this._parseTimeOrLabel(timeOrLabel.substr(0, i-1), 0, appendIfAbsent) : clippedDuration;
+			} else if (timeOrLabel == null) {
+				timeOrLabel = clippedDuration;
+			}
+			return Number(timeOrLabel) + offsetOrLabel;
+		};
+
+		p.seek = function(position, suppressEvents) {
+			return this.totalTime((typeof(position) === "number") ? position : this._parseTimeOrLabel(position), (suppressEvents !== false));
+		};
+
+		p.stop = function() {
+			return this.paused(true);
+		};
+
+		p.gotoAndPlay = function(position, suppressEvents) {
+			return this.play(position, suppressEvents);
+		};
+
+		p.gotoAndStop = function(position, suppressEvents) {
+			return this.pause(position, suppressEvents);
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			if (this._gc) {
+				this._enabled(true, false);
+			}
+			var totalDur = (!this._dirty) ? this._totalDuration : this.totalDuration(),
+				prevTime = this._time,
+				prevStart = this._startTime,
+				prevTimeScale = this._timeScale,
+				prevPaused = this._paused,
+				tween, isComplete, next, callback, internalForce, pauseTween, curTime;
+			if (time >= totalDur - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				this._totalTime = this._time = totalDur;
+				if (!this._reversed) if (!this._hasPausedChild()) {
+					isComplete = true;
+					callback = "onComplete";
+					internalForce = !!this._timeline.autoRemoveChildren; //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+					if (this._duration === 0) if ((time <= 0 && time >= -0.0000001) || this._rawPrevTime < 0 || this._rawPrevTime === _tinyNum) if (this._rawPrevTime !== time && this._first) {
+						internalForce = true;
+						if (this._rawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+				}
+				this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				time = totalDur + 0.0001; //to avoid occasional floating point rounding errors - sometimes child tweens/timelines were not being fully completed (their progress might be 0.999999999999998 instead of 1 because when _time - tween._startTime is performed, floating point errors would return a value that was SLIGHTLY off). Try (999999999999.7 - 999999999999) * 1 = 0.699951171875 instead of 0.7.
+
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				this._totalTime = this._time = 0;
+				if (prevTime !== 0 || (this._duration === 0 && this._rawPrevTime !== _tinyNum && (this._rawPrevTime > 0 || (time < 0 && this._rawPrevTime >= 0)))) {
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (this._timeline.autoRemoveChildren && this._reversed) { //ensures proper GC if a timeline is resumed after it's finished reversing.
+						internalForce = isComplete = true;
+						callback = "onReverseComplete";
+					} else if (this._rawPrevTime >= 0 && this._first) { //when going back beyond the start, force a render so that zero-duration tweens that sit at the very beginning render their start values properly. Otherwise, if the parent timeline's playhead lands exactly at this timeline's startTime, and then moves backwards, the zero-duration tweens at the beginning would still be at their end state.
+						internalForce = true;
+					}
+					this._rawPrevTime = time;
+				} else {
+					this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					if (time === 0 && isComplete) { //if there's a zero-duration tween at the very beginning of a timeline and the playhead lands EXACTLY at time 0, that tween will correctly render its end values, but we need to keep the timeline alive for one more render so that the beginning values render properly as the parent's playhead keeps moving beyond the begining. Imagine obj.x starts at 0 and then we do tl.set(obj, {x:100}).to(obj, 1, {x:200}) and then later we tl.reverse()...the goal is to have obj.x revert to 0. If the playhead happens to land on exactly 0, without this chunk of code, it'd complete the timeline and remove it from the rendering queue (not good).
+						tween = this._first;
+						while (tween && tween._startTime === 0) {
+							if (!tween._duration) {
+								isComplete = false;
+							}
+							tween = tween._next;
+						}
+					}
+					time = 0; //to avoid occasional floating point rounding errors (could cause problems especially with zero-duration tweens at the very beginning of the timeline)
+					if (!this._initted) {
+						internalForce = true;
+					}
+				}
+
+			} else {
+
+				if (this._hasPause && !this._forcingPlayhead && !suppressEvents) {
+					if (time >= prevTime) {
+						tween = this._first;
+						while (tween && tween._startTime <= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && !tween.ratio && !(tween._startTime === 0 && this._rawPrevTime === 0)) {
+								pauseTween = tween;
+							}
+							tween = tween._next;
+						}
+					} else {
+						tween = this._last;
+						while (tween && tween._startTime >= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && tween._rawPrevTime > 0) {
+								pauseTween = tween;
+							}
+							tween = tween._prev;
+						}
+					}
+					if (pauseTween) {
+						this._time = time = pauseTween._startTime;
+						this._totalTime = time + (this._cycle * (this._totalDuration + this._repeatDelay));
+					}
+				}
+
+				this._totalTime = this._time = this._rawPrevTime = time;
+			}
+			if ((this._time === prevTime || !this._first) && !force && !internalForce && !pauseTween) {
+				return;
+			} else if (!this._initted) {
+				this._initted = true;
+			}
+
+			if (!this._active) if (!this._paused && this._time !== prevTime && time > 0) {
+				this._active = true;  //so that if the user renders the timeline (as opposed to the parent timeline rendering it), it is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the timeline already finished but the user manually re-renders it as halfway done, for example.
+			}
+
+			if (prevTime === 0) if (this.vars.onStart) if (this._time !== 0 || !this._duration) if (!suppressEvents) {
+				this._callback("onStart");
+			}
+
+			curTime = this._time;
+			if (curTime >= prevTime) {
+				tween = this._first;
+				while (tween) {
+					next = tween._next; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= curTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			} else {
+				tween = this._last;
+				while (tween) {
+					next = tween._prev; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= prevTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							pauseTween = tween._prev; //the linked list is organized by _startTime, thus it's possible that a tween could start BEFORE the pause and end after it, in which case it would be positioned before the pause tween in the linked list, but we should render it before we pause() the timeline and cease rendering. This is only a concern when going in reverse.
+							while (pauseTween && pauseTween.endTime() > this._time) {
+								pauseTween.render( (pauseTween._reversed ? pauseTween.totalDuration() - ((time - pauseTween._startTime) * pauseTween._timeScale) : (time - pauseTween._startTime) * pauseTween._timeScale), suppressEvents, force);
+								pauseTween = pauseTween._prev;
+							}
+							pauseTween = null;
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			}
+
+			if (this._onUpdate) if (!suppressEvents) {
+				if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onUpdate on a timeline that reports/checks tweened values.
+					_lazyRender();
+				}
+				this._callback("onUpdate");
+			}
+
+			if (callback) if (!this._gc) if (prevStart === this._startTime || prevTimeScale !== this._timeScale) if (this._time === 0 || totalDur >= this.totalDuration()) { //if one of the tweens that was rendered altered this timeline's startTime (like if an onComplete reversed the timeline), it probably isn't complete. If it is, don't worry, because whatever call altered the startTime would complete if it was necessary at the new time. The only exception is the timeScale property. Also check _gc because there's a chance that kill() could be called in an onUpdate
+				if (isComplete) {
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onComplete on a timeline that reports/checks tweened values.
+						_lazyRender();
+					}
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+			}
+		};
+
+		p._hasPausedChild = function() {
+			var tween = this._first;
+			while (tween) {
+				if (tween._paused || ((tween instanceof TimelineLite) && tween._hasPausedChild())) {
+					return true;
+				}
+				tween = tween._next;
+			}
+			return false;
+		};
+
+		p.getChildren = function(nested, tweens, timelines, ignoreBeforeTime) {
+			ignoreBeforeTime = ignoreBeforeTime || -9999999999;
+			var a = [],
+				tween = this._first,
+				cnt = 0;
+			while (tween) {
+				if (tween._startTime < ignoreBeforeTime) {
+					//do nothing
+				} else if (tween instanceof TweenLite) {
+					if (tweens !== false) {
+						a[cnt++] = tween;
+					}
+				} else {
+					if (timelines !== false) {
+						a[cnt++] = tween;
+					}
+					if (nested !== false) {
+						a = a.concat(tween.getChildren(true, tweens, timelines));
+						cnt = a.length;
+					}
+				}
+				tween = tween._next;
+			}
+			return a;
+		};
+
+		p.getTweensOf = function(target, nested) {
+			var disabled = this._gc,
+				a = [],
+				cnt = 0,
+				tweens, i;
+			if (disabled) {
+				this._enabled(true, true); //getTweensOf() filters out disabled tweens, and we have to mark them as _gc = true when the timeline completes in order to allow clean garbage collection, so temporarily re-enable the timeline here.
+			}
+			tweens = TweenLite.getTweensOf(target);
+			i = tweens.length;
+			while (--i > -1) {
+				if (tweens[i].timeline === this || (nested && this._contains(tweens[i]))) {
+					a[cnt++] = tweens[i];
+				}
+			}
+			if (disabled) {
+				this._enabled(false, true);
+			}
+			return a;
+		};
+
+		p.recent = function() {
+			return this._recent;
+		};
+
+		p._contains = function(tween) {
+			var tl = tween.timeline;
+			while (tl) {
+				if (tl === this) {
+					return true;
+				}
+				tl = tl.timeline;
+			}
+			return false;
+		};
+
+		p.shiftChildren = function(amount, adjustLabels, ignoreBeforeTime) {
+			ignoreBeforeTime = ignoreBeforeTime || 0;
+			var tween = this._first,
+				labels = this._labels,
+				p;
+			while (tween) {
+				if (tween._startTime >= ignoreBeforeTime) {
+					tween._startTime += amount;
+				}
+				tween = tween._next;
+			}
+			if (adjustLabels) {
+				for (p in labels) {
+					if (labels[p] >= ignoreBeforeTime) {
+						labels[p] += amount;
+					}
+				}
+			}
+			return this._uncache(true);
+		};
+
+		p._kill = function(vars, target) {
+			if (!vars && !target) {
+				return this._enabled(false, false);
+			}
+			var tweens = (!target) ? this.getChildren(true, true, false) : this.getTweensOf(target),
+				i = tweens.length,
+				changed = false;
+			while (--i > -1) {
+				if (tweens[i]._kill(vars, target)) {
+					changed = true;
+				}
+			}
+			return changed;
+		};
+
+		p.clear = function(labels) {
+			var tweens = this.getChildren(false, true, true),
+				i = tweens.length;
+			this._time = this._totalTime = 0;
+			while (--i > -1) {
+				tweens[i]._enabled(false, false);
+			}
+			if (labels !== false) {
+				this._labels = {};
+			}
+			return this._uncache(true);
+		};
+
+		p.invalidate = function() {
+			var tween = this._first;
+			while (tween) {
+				tween.invalidate();
+				tween = tween._next;
+			}
+			return Animation.prototype.invalidate.call(this);;
+		};
+
+		p._enabled = function(enabled, ignoreTimeline) {
+			if (enabled === this._gc) {
+				var tween = this._first;
+				while (tween) {
+					tween._enabled(enabled, true);
+					tween = tween._next;
+				}
+			}
+			return SimpleTimeline.prototype._enabled.call(this, enabled, ignoreTimeline);
+		};
+
+		p.totalTime = function(time, suppressEvents, uncapped) {
+			this._forcingPlayhead = true;
+			var val = Animation.prototype.totalTime.apply(this, arguments);
+			this._forcingPlayhead = false;
+			return val;
+		};
+
+		p.duration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					this.totalDuration(); //just triggers recalculation
+				}
+				return this._duration;
+			}
+			if (this.duration() !== 0 && value !== 0) {
+				this.timeScale(this._duration / value);
+			}
+			return this;
+		};
+
+		p.totalDuration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					var max = 0,
+						tween = this._last,
+						prevStart = 999999999999,
+						prev, end;
+					while (tween) {
+						prev = tween._prev; //record it here in case the tween changes position in the sequence...
+						if (tween._dirty) {
+							tween.totalDuration(); //could change the tween._startTime, so make sure the tween's cache is clean before analyzing it.
+						}
+						if (tween._startTime > prevStart && this._sortChildren && !tween._paused) { //in case one of the tweens shifted out of order, it needs to be re-inserted into the correct position in the sequence
+							this.add(tween, tween._startTime - tween._delay);
+						} else {
+							prevStart = tween._startTime;
+						}
+						if (tween._startTime < 0 && !tween._paused) { //children aren't allowed to have negative startTimes unless smoothChildTiming is true, so adjust here if one is found.
+							max -= tween._startTime;
+							if (this._timeline.smoothChildTiming) {
+								this._startTime += tween._startTime / this._timeScale;
+							}
+							this.shiftChildren(-tween._startTime, false, -9999999999);
+							prevStart = 0;
+						}
+						end = tween._startTime + (tween._totalDuration / tween._timeScale);
+						if (end > max) {
+							max = end;
+						}
+						tween = prev;
+					}
+					this._duration = this._totalDuration = max;
+					this._dirty = false;
+				}
+				return this._totalDuration;
+			}
+			return (value && this.totalDuration()) ? this.timeScale(this._totalDuration / value) : this;
+		};
+
+		p.paused = function(value) {
+			if (!value) { //if there's a pause directly at the spot from where we're unpausing, skip it.
+				var tween = this._first,
+					time = this._time;
+				while (tween) {
+					if (tween._startTime === time && tween.data === "isPause") {
+						tween._rawPrevTime = 0; //remember, _rawPrevTime is how zero-duration tweens/callbacks sense directionality and determine whether or not to fire. If _rawPrevTime is the same as _startTime on the next render, it won't fire.
+					}
+					tween = tween._next;
+				}
+			}
+			return Animation.prototype.paused.apply(this, arguments);
+		};
+
+		p.usesFrames = function() {
+			var tl = this._timeline;
+			while (tl._timeline) {
+				tl = tl._timeline;
+			}
+			return (tl === Animation._rootFramesTimeline);
+		};
+
+		p.rawTime = function(wrapRepeats) {
+			return (wrapRepeats && (this._paused || (this._repeat && this.time() > 0 && this.totalProgress() < 1))) ? this._totalTime % (this._duration + this._repeatDelay) : this._paused ? this._totalTime : (this._timeline.rawTime(wrapRepeats) - this._startTime) * this._timeScale;
+		};
+
+		return TimelineLite;
+
+	}, true);
+
+
+}); if (_gsScope._gsDefine) { _gsScope._gsQueue.pop()(); }
+
+//export to AMD/RequireJS and CommonJS/Node (precursor to full modular build system coming at a later date)
+(function(name) {
+	"use strict";
+	var getGlobal = function() {
+		return (_gsScope.GreenSockGlobals || _gsScope)[name];
+	};
+	if (typeof(module) !== "undefined" && module.exports) { //node
+		__webpack_require__(1); //dependency
+		module.exports = getGlobal();
+	} else if (true) { //AMD
+		!(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(1)], __WEBPACK_AMD_DEFINE_FACTORY__ = (getGlobal),
+				__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+				(__WEBPACK_AMD_DEFINE_FACTORY__.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__)) : __WEBPACK_AMD_DEFINE_FACTORY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+	}
+}("TimelineLite"));
+
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2)))
+
+/***/ }),
+/* 23 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * VERSION: 1.15.6
+ * DATE: 2017-06-19
+ * UPDATES AND DOCS AT: http://greensock.com
+ *
+ * @license Copyright (c) 2008-2017, GreenSock. All rights reserved.
+ * This work is subject to the terms at http://greensock.com/standard-license or for
+ * Club GreenSock members, the software agreement that was issued with your membership.
+ * 
+ * @author: Jack Doyle, jack@greensock.com
+ **/
+var _gsScope = (typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window; //helps ensure compatibility with AMD/RequireJS and CommonJS/Node
+(_gsScope._gsQueue || (_gsScope._gsQueue = [])).push( function() {
+
+	"use strict";
+
+	_gsScope._gsDefine("easing.Back", ["easing.Ease"], function(Ease) {
+		
+		var w = (_gsScope.GreenSockGlobals || _gsScope),
+			gs = w.com.greensock,
+			_2PI = Math.PI * 2,
+			_HALF_PI = Math.PI / 2,
+			_class = gs._class,
+			_create = function(n, f) {
+				var C = _class("easing." + n, function(){}, true),
+					p = C.prototype = new Ease();
+				p.constructor = C;
+				p.getRatio = f;
+				return C;
+			},
+			_easeReg = Ease.register || function(){}, //put an empty function in place just as a safety measure in case someone loads an OLD version of TweenLite.js where Ease.register doesn't exist.
+			_wrap = function(name, EaseOut, EaseIn, EaseInOut, aliases) {
+				var C = _class("easing."+name, {
+					easeOut:new EaseOut(),
+					easeIn:new EaseIn(),
+					easeInOut:new EaseInOut()
+				}, true);
+				_easeReg(C, name);
+				return C;
+			},
+			EasePoint = function(time, value, next) {
+				this.t = time;
+				this.v = value;
+				if (next) {
+					this.next = next;
+					next.prev = this;
+					this.c = next.v - value;
+					this.gap = next.t - time;
+				}
+			},
+
+			//Back
+			_createBack = function(n, f) {
+				var C = _class("easing." + n, function(overshoot) {
+						this._p1 = (overshoot || overshoot === 0) ? overshoot : 1.70158;
+						this._p2 = this._p1 * 1.525;
+					}, true), 
+					p = C.prototype = new Ease();
+				p.constructor = C;
+				p.getRatio = f;
+				p.config = function(overshoot) {
+					return new C(overshoot);
+				};
+				return C;
+			},
+
+			Back = _wrap("Back",
+				_createBack("BackOut", function(p) {
+					return ((p = p - 1) * p * ((this._p1 + 1) * p + this._p1) + 1);
+				}),
+				_createBack("BackIn", function(p) {
+					return p * p * ((this._p1 + 1) * p - this._p1);
+				}),
+				_createBack("BackInOut", function(p) {
+					return ((p *= 2) < 1) ? 0.5 * p * p * ((this._p2 + 1) * p - this._p2) : 0.5 * ((p -= 2) * p * ((this._p2 + 1) * p + this._p2) + 2);
+				})
+			),
+
+
+			//SlowMo
+			SlowMo = _class("easing.SlowMo", function(linearRatio, power, yoyoMode) {
+				power = (power || power === 0) ? power : 0.7;
+				if (linearRatio == null) {
+					linearRatio = 0.7;
+				} else if (linearRatio > 1) {
+					linearRatio = 1;
+				}
+				this._p = (linearRatio !== 1) ? power : 0;
+				this._p1 = (1 - linearRatio) / 2;
+				this._p2 = linearRatio;
+				this._p3 = this._p1 + this._p2;
+				this._calcEnd = (yoyoMode === true);
+			}, true),
+			p = SlowMo.prototype = new Ease(),
+			SteppedEase, RoughEase, _createElastic;
+			
+		p.constructor = SlowMo;
+		p.getRatio = function(p) {
+			var r = p + (0.5 - p) * this._p;
+			if (p < this._p1) {
+				return this._calcEnd ? 1 - ((p = 1 - (p / this._p1)) * p) : r - ((p = 1 - (p / this._p1)) * p * p * p * r);
+			} else if (p > this._p3) {
+				return this._calcEnd ? 1 - (p = (p - this._p3) / this._p1) * p : r + ((p - r) * (p = (p - this._p3) / this._p1) * p * p * p);
+			}
+			return this._calcEnd ? 1 : r;
+		};
+		SlowMo.ease = new SlowMo(0.7, 0.7);
+		
+		p.config = SlowMo.config = function(linearRatio, power, yoyoMode) {
+			return new SlowMo(linearRatio, power, yoyoMode);
+		};
+
+
+		//SteppedEase
+		SteppedEase = _class("easing.SteppedEase", function(steps, immediateStart) {
+				steps = steps || 1;
+				this._p1 = 1 / steps;
+				this._p2 = steps + (immediateStart ? 0 : 1);
+				this._p3 = immediateStart ? 1 : 0;
+			}, true);
+		p = SteppedEase.prototype = new Ease();	
+		p.constructor = SteppedEase;
+		p.getRatio = function(p) {
+			if (p < 0) {
+				p = 0;
+			} else if (p >= 1) {
+				p = 0.999999999;
+			}
+			return (((this._p2 * p) | 0) + this._p3) * this._p1;
+		};
+		p.config = SteppedEase.config = function(steps, immediateStart) {
+			return new SteppedEase(steps, immediateStart);
+		};
+
+
+		//RoughEase
+		RoughEase = _class("easing.RoughEase", function(vars) {
+			vars = vars || {};
+			var taper = vars.taper || "none",
+				a = [],
+				cnt = 0,
+				points = (vars.points || 20) | 0,
+				i = points,
+				randomize = (vars.randomize !== false),
+				clamp = (vars.clamp === true),
+				template = (vars.template instanceof Ease) ? vars.template : null,
+				strength = (typeof(vars.strength) === "number") ? vars.strength * 0.4 : 0.4,
+				x, y, bump, invX, obj, pnt;
+			while (--i > -1) {
+				x = randomize ? Math.random() : (1 / points) * i;
+				y = template ? template.getRatio(x) : x;
+				if (taper === "none") {
+					bump = strength;
+				} else if (taper === "out") {
+					invX = 1 - x;
+					bump = invX * invX * strength;
+				} else if (taper === "in") {
+					bump = x * x * strength;
+				} else if (x < 0.5) {  //"both" (start)
+					invX = x * 2;
+					bump = invX * invX * 0.5 * strength;
+				} else {				//"both" (end)
+					invX = (1 - x) * 2;
+					bump = invX * invX * 0.5 * strength;
+				}
+				if (randomize) {
+					y += (Math.random() * bump) - (bump * 0.5);
+				} else if (i % 2) {
+					y += bump * 0.5;
+				} else {
+					y -= bump * 0.5;
+				}
+				if (clamp) {
+					if (y > 1) {
+						y = 1;
+					} else if (y < 0) {
+						y = 0;
+					}
+				}
+				a[cnt++] = {x:x, y:y};
+			}
+			a.sort(function(a, b) {
+				return a.x - b.x;
+			});
+
+			pnt = new EasePoint(1, 1, null);
+			i = points;
+			while (--i > -1) {
+				obj = a[i];
+				pnt = new EasePoint(obj.x, obj.y, pnt);
+			}
+
+			this._prev = new EasePoint(0, 0, (pnt.t !== 0) ? pnt : pnt.next);
+		}, true);
+		p = RoughEase.prototype = new Ease();
+		p.constructor = RoughEase;
+		p.getRatio = function(p) {
+			var pnt = this._prev;
+			if (p > pnt.t) {
+				while (pnt.next && p >= pnt.t) {
+					pnt = pnt.next;
+				}
+				pnt = pnt.prev;
+			} else {
+				while (pnt.prev && p <= pnt.t) {
+					pnt = pnt.prev;
+				}
+			}
+			this._prev = pnt;
+			return (pnt.v + ((p - pnt.t) / pnt.gap) * pnt.c);
+		};
+		p.config = function(vars) {
+			return new RoughEase(vars);
+		};
+		RoughEase.ease = new RoughEase();
+
+
+		//Bounce
+		_wrap("Bounce",
+			_create("BounceOut", function(p) {
+				if (p < 1 / 2.75) {
+					return 7.5625 * p * p;
+				} else if (p < 2 / 2.75) {
+					return 7.5625 * (p -= 1.5 / 2.75) * p + 0.75;
+				} else if (p < 2.5 / 2.75) {
+					return 7.5625 * (p -= 2.25 / 2.75) * p + 0.9375;
+				}
+				return 7.5625 * (p -= 2.625 / 2.75) * p + 0.984375;
+			}),
+			_create("BounceIn", function(p) {
+				if ((p = 1 - p) < 1 / 2.75) {
+					return 1 - (7.5625 * p * p);
+				} else if (p < 2 / 2.75) {
+					return 1 - (7.5625 * (p -= 1.5 / 2.75) * p + 0.75);
+				} else if (p < 2.5 / 2.75) {
+					return 1 - (7.5625 * (p -= 2.25 / 2.75) * p + 0.9375);
+				}
+				return 1 - (7.5625 * (p -= 2.625 / 2.75) * p + 0.984375);
+			}),
+			_create("BounceInOut", function(p) {
+				var invert = (p < 0.5);
+				if (invert) {
+					p = 1 - (p * 2);
+				} else {
+					p = (p * 2) - 1;
+				}
+				if (p < 1 / 2.75) {
+					p = 7.5625 * p * p;
+				} else if (p < 2 / 2.75) {
+					p = 7.5625 * (p -= 1.5 / 2.75) * p + 0.75;
+				} else if (p < 2.5 / 2.75) {
+					p = 7.5625 * (p -= 2.25 / 2.75) * p + 0.9375;
+				} else {
+					p = 7.5625 * (p -= 2.625 / 2.75) * p + 0.984375;
+				}
+				return invert ? (1 - p) * 0.5 : p * 0.5 + 0.5;
+			})
+		);
+
+
+		//CIRC
+		_wrap("Circ",
+			_create("CircOut", function(p) {
+				return Math.sqrt(1 - (p = p - 1) * p);
+			}),
+			_create("CircIn", function(p) {
+				return -(Math.sqrt(1 - (p * p)) - 1);
+			}),
+			_create("CircInOut", function(p) {
+				return ((p*=2) < 1) ? -0.5 * (Math.sqrt(1 - p * p) - 1) : 0.5 * (Math.sqrt(1 - (p -= 2) * p) + 1);
+			})
+		);
+
+
+		//Elastic
+		_createElastic = function(n, f, def) {
+			var C = _class("easing." + n, function(amplitude, period) {
+					this._p1 = (amplitude >= 1) ? amplitude : 1; //note: if amplitude is < 1, we simply adjust the period for a more natural feel. Otherwise the math doesn't work right and the curve starts at 1.
+					this._p2 = (period || def) / (amplitude < 1 ? amplitude : 1);
+					this._p3 = this._p2 / _2PI * (Math.asin(1 / this._p1) || 0);
+					this._p2 = _2PI / this._p2; //precalculate to optimize
+				}, true),
+				p = C.prototype = new Ease();
+			p.constructor = C;
+			p.getRatio = f;
+			p.config = function(amplitude, period) {
+				return new C(amplitude, period);
+			};
+			return C;
+		};
+		_wrap("Elastic",
+			_createElastic("ElasticOut", function(p) {
+				return this._p1 * Math.pow(2, -10 * p) * Math.sin( (p - this._p3) * this._p2 ) + 1;
+			}, 0.3),
+			_createElastic("ElasticIn", function(p) {
+				return -(this._p1 * Math.pow(2, 10 * (p -= 1)) * Math.sin( (p - this._p3) * this._p2 ));
+			}, 0.3),
+			_createElastic("ElasticInOut", function(p) {
+				return ((p *= 2) < 1) ? -0.5 * (this._p1 * Math.pow(2, 10 * (p -= 1)) * Math.sin( (p - this._p3) * this._p2)) : this._p1 * Math.pow(2, -10 *(p -= 1)) * Math.sin( (p - this._p3) * this._p2 ) * 0.5 + 1;
+			}, 0.45)
+		);
+
+
+		//Expo
+		_wrap("Expo",
+			_create("ExpoOut", function(p) {
+				return 1 - Math.pow(2, -10 * p);
+			}),
+			_create("ExpoIn", function(p) {
+				return Math.pow(2, 10 * (p - 1)) - 0.001;
+			}),
+			_create("ExpoInOut", function(p) {
+				return ((p *= 2) < 1) ? 0.5 * Math.pow(2, 10 * (p - 1)) : 0.5 * (2 - Math.pow(2, -10 * (p - 1)));
+			})
+		);
+
+
+		//Sine
+		_wrap("Sine",
+			_create("SineOut", function(p) {
+				return Math.sin(p * _HALF_PI);
+			}),
+			_create("SineIn", function(p) {
+				return -Math.cos(p * _HALF_PI) + 1;
+			}),
+			_create("SineInOut", function(p) {
+				return -0.5 * (Math.cos(Math.PI * p) - 1);
+			})
+		);
+
+		_class("easing.EaseLookup", {
+				find:function(s) {
+					return Ease.map[s];
+				}
+			}, true);
+
+		//register the non-standard eases
+		_easeReg(w.SlowMo, "SlowMo", "ease,");
+		_easeReg(RoughEase, "RoughEase", "ease,");
+		_easeReg(SteppedEase, "SteppedEase", "ease,");
+		
+		return Back;
+		
+	}, true);
+
+}); if (_gsScope._gsDefine) { _gsScope._gsQueue.pop()(); }
+
+//export to AMD/RequireJS and CommonJS/Node (precursor to full modular build system coming at a later date)
+(function() {
+	"use strict";
+	var getGlobal = function() {
+		return (_gsScope.GreenSockGlobals || _gsScope);
+	};
+	if (typeof(module) !== "undefined" && module.exports) { //node
+		__webpack_require__(1);
+		module.exports = getGlobal();
+	} else if (true) { //AMD
+		!(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(1)], __WEBPACK_AMD_DEFINE_FACTORY__ = (getGlobal),
+				__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+				(__WEBPACK_AMD_DEFINE_FACTORY__.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__)) : __WEBPACK_AMD_DEFINE_FACTORY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+	}
+}());
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2)))
+
+/***/ }),
+/* 24 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * VERSION: 1.20.2
+ * DATE: 2017-06-30
+ * UPDATES AND DOCS AT: http://greensock.com
+ * 
+ * Includes all of the following: TweenLite, TweenMax, TimelineLite, TimelineMax, EasePack, CSSPlugin, RoundPropsPlugin, BezierPlugin, AttrPlugin, DirectionalRotationPlugin
+ *
+ * @license Copyright (c) 2008-2017, GreenSock. All rights reserved.
+ * This work is subject to the terms at http://greensock.com/standard-license or for
+ * Club GreenSock members, the software agreement that was issued with your membership.
+ * 
+ * @author: Jack Doyle, jack@greensock.com
+ **/
+var _gsScope = (typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window; //helps ensure compatibility with AMD/RequireJS and CommonJS/Node
+(_gsScope._gsQueue || (_gsScope._gsQueue = [])).push( function() {
+
+	"use strict";
+
+	_gsScope._gsDefine("TweenMax", ["core.Animation","core.SimpleTimeline","TweenLite"], function(Animation, SimpleTimeline, TweenLite) {
+
+		var _slice = function(a) { //don't use [].slice because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+				var b = [],
+					l = a.length,
+					i;
+				for (i = 0; i !== l; b.push(a[i++]));
+				return b;
+			},
+			_applyCycle = function(vars, targets, i) {
+				var alt = vars.cycle,
+					p, val;
+				for (p in alt) {
+					val = alt[p];
+					vars[p] = (typeof(val) === "function") ? val(i, targets[i]) : val[i % val.length];
+				}
+				delete vars.cycle;
+			},
+			TweenMax = function(target, duration, vars) {
+				TweenLite.call(this, target, duration, vars);
+				this._cycle = 0;
+				this._yoyo = (this.vars.yoyo === true || !!this.vars.yoyoEase);
+				this._repeat = this.vars.repeat || 0;
+				this._repeatDelay = this.vars.repeatDelay || 0;
+				this._dirty = true; //ensures that if there is any repeat, the totalDuration will get recalculated to accurately report it.
+				this.render = TweenMax.prototype.render; //speed optimization (avoid prototype lookup on this "hot" method)
+			},
+			_tinyNum = 0.0000000001,
+			TweenLiteInternals = TweenLite._internals,
+			_isSelector = TweenLiteInternals.isSelector,
+			_isArray = TweenLiteInternals.isArray,
+			p = TweenMax.prototype = TweenLite.to({}, 0.1, {}),
+			_blankArray = [];
+
+		TweenMax.version = "1.20.2";
+		p.constructor = TweenMax;
+		p.kill()._gc = false;
+		TweenMax.killTweensOf = TweenMax.killDelayedCallsTo = TweenLite.killTweensOf;
+		TweenMax.getTweensOf = TweenLite.getTweensOf;
+		TweenMax.lagSmoothing = TweenLite.lagSmoothing;
+		TweenMax.ticker = TweenLite.ticker;
+		TweenMax.render = TweenLite.render;
+
+		p.invalidate = function() {
+			this._yoyo = (this.vars.yoyo === true || !!this.vars.yoyoEase);
+			this._repeat = this.vars.repeat || 0;
+			this._repeatDelay = this.vars.repeatDelay || 0;
+			this._yoyoEase = null;
+			this._uncache(true);
+			return TweenLite.prototype.invalidate.call(this);
+		};
+		
+		p.updateTo = function(vars, resetDuration) {
+			var curRatio = this.ratio,
+				immediate = this.vars.immediateRender || vars.immediateRender,
+				p;
+			if (resetDuration && this._startTime < this._timeline._time) {
+				this._startTime = this._timeline._time;
+				this._uncache(false);
+				if (this._gc) {
+					this._enabled(true, false);
+				} else {
+					this._timeline.insert(this, this._startTime - this._delay); //ensures that any necessary re-sequencing of Animations in the timeline occurs to make sure the rendering order is correct.
+				}
+			}
+			for (p in vars) {
+				this.vars[p] = vars[p];
+			}
+			if (this._initted || immediate) {
+				if (resetDuration) {
+					this._initted = false;
+					if (immediate) {
+						this.render(0, true, true);
+					}
+				} else {
+					if (this._gc) {
+						this._enabled(true, false);
+					}
+					if (this._notifyPluginsOfEnabled && this._firstPT) {
+						TweenLite._onPluginEvent("_onDisable", this); //in case a plugin like MotionBlur must perform some cleanup tasks
+					}
+					if (this._time / this._duration > 0.998) { //if the tween has finished (or come extremely close to finishing), we just need to rewind it to 0 and then render it again at the end which forces it to re-initialize (parsing the new vars). We allow tweens that are close to finishing (but haven't quite finished) to work this way too because otherwise, the values are so small when determining where to project the starting values that binary math issues creep in and can make the tween appear to render incorrectly when run backwards. 
+						var prevTime = this._totalTime;
+						this.render(0, true, false);
+						this._initted = false;
+						this.render(prevTime, true, false);
+					} else {
+						this._initted = false;
+						this._init();
+						if (this._time > 0 || immediate) {
+							var inv = 1 / (1 - curRatio),
+								pt = this._firstPT, endValue;
+							while (pt) {
+								endValue = pt.s + pt.c;
+								pt.c *= inv;
+								pt.s = endValue - pt.c;
+								pt = pt._next;
+							}
+						}
+					}
+				}
+			}
+			return this;
+		};
+				
+		p.render = function(time, suppressEvents, force) {
+			if (!this._initted) if (this._duration === 0 && this.vars.repeat) { //zero duration tweens that render immediately have render() called from TweenLite's constructor, before TweenMax's constructor has finished setting _repeat, _repeatDelay, and _yoyo which are critical in determining totalDuration() so we need to call invalidate() which is a low-kb way to get those set properly.
+				this.invalidate();
+			}
+			var totalDur = (!this._dirty) ? this._totalDuration : this.totalDuration(),
+				prevTime = this._time,
+				prevTotalTime = this._totalTime, 
+				prevCycle = this._cycle,
+				duration = this._duration,
+				prevRawPrevTime = this._rawPrevTime,
+				isComplete, callback, pt, cycleDuration, r, type, pow, rawPrevTime, yoyoEase;
+			if (time >= totalDur - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				this._totalTime = totalDur;
+				this._cycle = this._repeat;
+				if (this._yoyo && (this._cycle & 1) !== 0) {
+					this._time = 0;
+					this.ratio = this._ease._calcEnd ? this._ease.getRatio(0) : 0;
+				} else {
+					this._time = duration;
+					this.ratio = this._ease._calcEnd ? this._ease.getRatio(1) : 1;
+				}
+				if (!this._reversed) {
+					isComplete = true;
+					callback = "onComplete";
+					force = (force || this._timeline.autoRemoveChildren); //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+				}
+				if (duration === 0) if (this._initted || !this.vars.lazy || force) { //zero-duration tweens are tricky because we must discern the momentum/direction of time in order to determine whether the starting values should be rendered or the ending values. If the "playhead" of its timeline goes past the zero-duration tween in the forward direction or lands directly on it, the end values should be rendered, but if the timeline's "playhead" moves past it in the backward direction (from a postitive time to a negative time), the starting values must be rendered.
+					if (this._startTime === this._timeline._duration) { //if a zero-duration tween is at the VERY end of a timeline and that timeline renders at its end, it will typically add a tiny bit of cushion to the render time to prevent rounding errors from getting in the way of tweens rendering their VERY end. If we then reverse() that timeline, the zero-duration tween will trigger its onReverseComplete even though technically the playhead didn't pass over it again. It's a very specific edge case we must accommodate.
+						time = 0;
+					}
+					if (prevRawPrevTime < 0 || (time <= 0 && time >= -0.0000001) || (prevRawPrevTime === _tinyNum && this.data !== "isPause")) if (prevRawPrevTime !== time) { //note: when this.data is "isPause", it's a callback added by addPause() on a timeline that we should not be triggered when LEAVING its exact start time. In other words, tl.addPause(1).play(1) shouldn't pause.
+						force = true;
+						if (prevRawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+					this._rawPrevTime = rawPrevTime = (!suppressEvents || time || prevRawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				}
+				
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				this._totalTime = this._time = this._cycle = 0;
+				this.ratio = this._ease._calcEnd ? this._ease.getRatio(0) : 0;
+				if (prevTotalTime !== 0 || (duration === 0 && prevRawPrevTime > 0)) {
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (duration === 0) if (this._initted || !this.vars.lazy || force) { //zero-duration tweens are tricky because we must discern the momentum/direction of time in order to determine whether the starting values should be rendered or the ending values. If the "playhead" of its timeline goes past the zero-duration tween in the forward direction or lands directly on it, the end values should be rendered, but if the timeline's "playhead" moves past it in the backward direction (from a postitive time to a negative time), the starting values must be rendered.
+						if (prevRawPrevTime >= 0) {
+							force = true;
+						}
+						this._rawPrevTime = rawPrevTime = (!suppressEvents || time || prevRawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					}
+				}
+				if (!this._initted) { //if we render the very beginning (time == 0) of a fromTo(), we must force the render (normal tweens wouldn't need to render at a time of 0 when the prevTime was also 0). This is also mandatory to make sure overwriting kicks in immediately.
+					force = true;
+				}
+			} else {
+				this._totalTime = this._time = time;
+				if (this._repeat !== 0) {
+					cycleDuration = duration + this._repeatDelay;
+					this._cycle = (this._totalTime / cycleDuration) >> 0; //originally _totalTime % cycleDuration but floating point errors caused problems, so I normalized it. (4 % 0.8 should be 0 but some browsers report it as 0.79999999!)
+					if (this._cycle !== 0) if (this._cycle === this._totalTime / cycleDuration && prevTotalTime <= time) {
+						this._cycle--; //otherwise when rendered exactly at the end time, it will act as though it is repeating (at the beginning)
+					}
+					this._time = this._totalTime - (this._cycle * cycleDuration);
+					if (this._yoyo) if ((this._cycle & 1) !== 0) {
+						this._time = duration - this._time;
+						yoyoEase = this._yoyoEase || this.vars.yoyoEase; //note: we don't set this._yoyoEase in _init() like we do other properties because it's TweenMax-specific and doing it here allows us to optimize performance (most tweens don't have a yoyoEase). Note that we also must skip the this.ratio calculation further down right after we _init() in this function, because we're doing it here.
+						if (yoyoEase) {
+							if (!this._yoyoEase) {
+								if (yoyoEase === true && !this._initted) { //if it's not initted and yoyoEase is true, this._ease won't have been populated yet so we must discern it here.
+									yoyoEase = this.vars.ease;
+									this._yoyoEase = yoyoEase = !yoyoEase ? TweenLite.defaultEase : (yoyoEase instanceof Ease) ? yoyoEase : (typeof(yoyoEase) === "function") ? new Ease(yoyoEase, this.vars.easeParams) : Ease.map[yoyoEase] || TweenLite.defaultEase;
+								} else {
+									this._yoyoEase = yoyoEase = (yoyoEase === true) ? this._ease : (yoyoEase instanceof Ease) ? yoyoEase : Ease.map[yoyoEase];
+								}
+							}
+							this.ratio = yoyoEase ? 1 - yoyoEase.getRatio((duration - this._time) / duration) : 0;
+						}
+					}
+					if (this._time > duration) {
+						this._time = duration;
+					} else if (this._time < 0) {
+						this._time = 0;
+					}
+				}
+
+				if (this._easeType && !yoyoEase) {
+					r = this._time / duration;
+					type = this._easeType;
+					pow = this._easePower;
+					if (type === 1 || (type === 3 && r >= 0.5)) {
+						r = 1 - r;
+					}
+					if (type === 3) {
+						r *= 2;
+					}
+					if (pow === 1) {
+						r *= r;
+					} else if (pow === 2) {
+						r *= r * r;
+					} else if (pow === 3) {
+						r *= r * r * r;
+					} else if (pow === 4) {
+						r *= r * r * r * r;
+					}
+
+					if (type === 1) {
+						this.ratio = 1 - r;
+					} else if (type === 2) {
+						this.ratio = r;
+					} else if (this._time / duration < 0.5) {
+						this.ratio = r / 2;
+					} else {
+						this.ratio = 1 - (r / 2);
+					}
+
+				} else if (!yoyoEase) {
+					this.ratio = this._ease.getRatio(this._time / duration);
+				}
+				
+			}
+				
+			if (prevTime === this._time && !force && prevCycle === this._cycle) {
+				if (prevTotalTime !== this._totalTime) if (this._onUpdate) if (!suppressEvents) { //so that onUpdate fires even during the repeatDelay - as long as the totalTime changed, we should trigger onUpdate.
+					this._callback("onUpdate");
+				}
+				return;
+			} else if (!this._initted) {
+				this._init();
+				if (!this._initted || this._gc) { //immediateRender tweens typically won't initialize until the playhead advances (_time is greater than 0) in order to ensure that overwriting occurs properly. Also, if all of the tweening properties have been overwritten (which would cause _gc to be true, as set in _init()), we shouldn't continue otherwise an onStart callback could be called for example.
+					return;
+				} else if (!force && this._firstPT && ((this.vars.lazy !== false && this._duration) || (this.vars.lazy && !this._duration))) { //we stick it in the queue for rendering at the very end of the tick - this is a performance optimization because browsers invalidate styles and force a recalculation if you read, write, and then read style data (so it's better to read/read/read/write/write/write than read/write/read/write/read/write). The down side, of course, is that usually you WANT things to render immediately because you may have code running right after that which depends on the change. Like imagine running TweenLite.set(...) and then immediately after that, creating a nother tween that animates the same property to another value; the starting values of that 2nd tween wouldn't be accurate if lazy is true.
+					this._time = prevTime;
+					this._totalTime = prevTotalTime;
+					this._rawPrevTime = prevRawPrevTime;
+					this._cycle = prevCycle;
+					TweenLiteInternals.lazyTweens.push(this);
+					this._lazy = [time, suppressEvents];
+					return;
+				}
+				//_ease is initially set to defaultEase, so now that init() has run, _ease is set properly and we need to recalculate the ratio. Overall this is faster than using conditional logic earlier in the method to avoid having to set ratio twice because we only init() once but renderTime() gets called VERY frequently.
+				if (this._time && !isComplete && !yoyoEase) {
+					this.ratio = this._ease.getRatio(this._time / duration);
+				} else if (isComplete && this._ease._calcEnd && !yoyoEase) {
+					this.ratio = this._ease.getRatio((this._time === 0) ? 0 : 1);
+				}
+			}
+			if (this._lazy !== false) {
+				this._lazy = false;
+			}
+
+			if (!this._active) if (!this._paused && this._time !== prevTime && time >= 0) {
+				this._active = true; //so that if the user renders a tween (as opposed to the timeline rendering it), the timeline is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the tween already finished but the user manually re-renders it as halfway done.
+			}
+			if (prevTotalTime === 0) {
+				if (this._initted === 2 && time > 0) {
+					//this.invalidate();
+					this._init(); //will just apply overwriting since _initted of (2) means it was a from() tween that had immediateRender:true
+				}
+				if (this._startAt) {
+					if (time >= 0) {
+						this._startAt.render(time, suppressEvents, force);
+					} else if (!callback) {
+						callback = "_dummyGS"; //if no callback is defined, use a dummy value just so that the condition at the end evaluates as true because _startAt should render AFTER the normal render loop when the time is negative. We could handle this in a more intuitive way, of course, but the render loop is the MOST important thing to optimize, so this technique allows us to avoid adding extra conditional logic in a high-frequency area.
+					}
+				}
+				if (this.vars.onStart) if (this._totalTime !== 0 || duration === 0) if (!suppressEvents) {
+					this._callback("onStart");
+				}
+			}
+			
+			pt = this._firstPT;
+			while (pt) {
+				if (pt.f) {
+					pt.t[pt.p](pt.c * this.ratio + pt.s);
+				} else {
+					pt.t[pt.p] = pt.c * this.ratio + pt.s;
+				}
+				pt = pt._next;
+			}
+			
+			if (this._onUpdate) {
+				if (time < 0) if (this._startAt && this._startTime) { //if the tween is positioned at the VERY beginning (_startTime 0) of its parent timeline, it's illegal for the playhead to go back further, so we should not render the recorded startAt values.
+					this._startAt.render(time, suppressEvents, force); //note: for performance reasons, we tuck this conditional logic inside less traveled areas (most tweens don't have an onUpdate). We'd just have it at the end before the onComplete, but the values should be updated before any onUpdate is called, so we ALSO put it here and then if it's not called, we do so later near the onComplete.
+				}
+				if (!suppressEvents) if (this._totalTime !== prevTotalTime || callback) {
+					this._callback("onUpdate");
+				}
+			}
+			if (this._cycle !== prevCycle) if (!suppressEvents) if (!this._gc) if (this.vars.onRepeat) {
+				this._callback("onRepeat");
+			}
+			if (callback) if (!this._gc || force) { //check gc because there's a chance that kill() could be called in an onUpdate
+				if (time < 0 && this._startAt && !this._onUpdate && this._startTime) { //if the tween is positioned at the VERY beginning (_startTime 0) of its parent timeline, it's illegal for the playhead to go back further, so we should not render the recorded startAt values.
+					this._startAt.render(time, suppressEvents, force);
+				}
+				if (isComplete) {
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+				if (duration === 0 && this._rawPrevTime === _tinyNum && rawPrevTime !== _tinyNum) { //the onComplete or onReverseComplete could trigger movement of the playhead and for zero-duration tweens (which must discern direction) that land directly back on their start time, we don't want to fire again on the next render. Think of several addPause()'s in a timeline that forces the playhead to a certain spot, but what if it's already paused and another tween is tweening the "time" of the timeline? Each time it moves [forward] past that spot, it would move back, and since suppressEvents is true, it'd reset _rawPrevTime to _tinyNum so that when it begins again, the callback would fire (so ultimately it could bounce back and forth during that tween). Again, this is a very uncommon scenario, but possible nonetheless.
+					this._rawPrevTime = 0;
+				}
+			}
+		};
+		
+//---- STATIC FUNCTIONS -----------------------------------------------------------------------------------------------------------
+		
+		TweenMax.to = function(target, duration, vars) {
+			return new TweenMax(target, duration, vars);
+		};
+		
+		TweenMax.from = function(target, duration, vars) {
+			vars.runBackwards = true;
+			vars.immediateRender = (vars.immediateRender != false);
+			return new TweenMax(target, duration, vars);
+		};
+		
+		TweenMax.fromTo = function(target, duration, fromVars, toVars) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return new TweenMax(target, duration, toVars);
+		};
+		
+		TweenMax.staggerTo = TweenMax.allTo = function(targets, duration, vars, stagger, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			stagger = stagger || 0;
+			var delay = 0,
+				a = [],
+				finalComplete = function() {
+					if (vars.onComplete) {
+						vars.onComplete.apply(vars.onCompleteScope || this, arguments);
+					}
+					onCompleteAll.apply(onCompleteAllScope || vars.callbackScope || this, onCompleteAllParams || _blankArray);
+				},
+				cycle = vars.cycle,
+				fromCycle = (vars.startAt && vars.startAt.cycle),
+				l, copy, i, p;
+			if (!_isArray(targets)) {
+				if (typeof(targets) === "string") {
+					targets = TweenLite.selector(targets) || targets;
+				}
+				if (_isSelector(targets)) {
+					targets = _slice(targets);
+				}
+			}
+			targets = targets || [];
+			if (stagger < 0) {
+				targets = _slice(targets);
+				targets.reverse();
+				stagger *= -1;
+			}
+			l = targets.length - 1;
+			for (i = 0; i <= l; i++) {
+				copy = {};
+				for (p in vars) {
+					copy[p] = vars[p];
+				}
+				if (cycle) {
+					_applyCycle(copy, targets, i);
+					if (copy.duration != null) {
+						duration = copy.duration;
+						delete copy.duration;
+					}
+				}
+				if (fromCycle) {
+					fromCycle = copy.startAt = {};
+					for (p in vars.startAt) {
+						fromCycle[p] = vars.startAt[p];
+					}
+					_applyCycle(copy.startAt, targets, i);
+				}
+				copy.delay = delay + (copy.delay || 0);
+				if (i === l && onCompleteAll) {
+					copy.onComplete = finalComplete;
+				}
+				a[i] = new TweenMax(targets[i], duration, copy);
+				delay += stagger;
+			}
+			return a;
+		};
+		
+		TweenMax.staggerFrom = TweenMax.allFrom = function(targets, duration, vars, stagger, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			vars.runBackwards = true;
+			vars.immediateRender = (vars.immediateRender != false);
+			return TweenMax.staggerTo(targets, duration, vars, stagger, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+		
+		TweenMax.staggerFromTo = TweenMax.allFromTo = function(targets, duration, fromVars, toVars, stagger, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return TweenMax.staggerTo(targets, duration, toVars, stagger, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+				
+		TweenMax.delayedCall = function(delay, callback, params, scope, useFrames) {
+			return new TweenMax(callback, 0, {delay:delay, onComplete:callback, onCompleteParams:params, callbackScope:scope, onReverseComplete:callback, onReverseCompleteParams:params, immediateRender:false, useFrames:useFrames, overwrite:0});
+		};
+		
+		TweenMax.set = function(target, vars) {
+			return new TweenMax(target, 0, vars);
+		};
+		
+		TweenMax.isTweening = function(target) {
+			return (TweenLite.getTweensOf(target, true).length > 0);
+		};
+		
+		var _getChildrenOf = function(timeline, includeTimelines) {
+				var a = [],
+					cnt = 0,
+					tween = timeline._first;
+				while (tween) {
+					if (tween instanceof TweenLite) {
+						a[cnt++] = tween;
+					} else {
+						if (includeTimelines) {
+							a[cnt++] = tween;
+						}
+						a = a.concat(_getChildrenOf(tween, includeTimelines));
+						cnt = a.length;
+					}
+					tween = tween._next;
+				}
+				return a;
+			}, 
+			getAllTweens = TweenMax.getAllTweens = function(includeTimelines) {
+				return _getChildrenOf(Animation._rootTimeline, includeTimelines).concat( _getChildrenOf(Animation._rootFramesTimeline, includeTimelines) );
+			};
+		
+		TweenMax.killAll = function(complete, tweens, delayedCalls, timelines) {
+			if (tweens == null) {
+				tweens = true;
+			}
+			if (delayedCalls == null) {
+				delayedCalls = true;
+			}
+			var a = getAllTweens((timelines != false)),
+				l = a.length,
+				allTrue = (tweens && delayedCalls && timelines),
+				isDC, tween, i;
+			for (i = 0; i < l; i++) {
+				tween = a[i];
+				if (allTrue || (tween instanceof SimpleTimeline) || ((isDC = (tween.target === tween.vars.onComplete)) && delayedCalls) || (tweens && !isDC)) {
+					if (complete) {
+						tween.totalTime(tween._reversed ? 0 : tween.totalDuration());
+					} else {
+						tween._enabled(false, false);
+					}
+				}
+			}
+		};
+		
+		TweenMax.killChildTweensOf = function(parent, complete) {
+			if (parent == null) {
+				return;
+			}
+			var tl = TweenLiteInternals.tweenLookup,
+				a, curParent, p, i, l;
+			if (typeof(parent) === "string") {
+				parent = TweenLite.selector(parent) || parent;
+			}
+			if (_isSelector(parent)) {
+				parent = _slice(parent);
+			}
+			if (_isArray(parent)) {
+				i = parent.length;
+				while (--i > -1) {
+					TweenMax.killChildTweensOf(parent[i], complete);
+				}
+				return;
+			}
+			a = [];
+			for (p in tl) {
+				curParent = tl[p].target.parentNode;
+				while (curParent) {
+					if (curParent === parent) {
+						a = a.concat(tl[p].tweens);
+					}
+					curParent = curParent.parentNode;
+				}
+			}
+			l = a.length;
+			for (i = 0; i < l; i++) {
+				if (complete) {
+					a[i].totalTime(a[i].totalDuration());
+				}
+				a[i]._enabled(false, false);
+			}
+		};
+
+		var _changePause = function(pause, tweens, delayedCalls, timelines) {
+			tweens = (tweens !== false);
+			delayedCalls = (delayedCalls !== false);
+			timelines = (timelines !== false);
+			var a = getAllTweens(timelines),
+				allTrue = (tweens && delayedCalls && timelines),
+				i = a.length,
+				isDC, tween;
+			while (--i > -1) {
+				tween = a[i];
+				if (allTrue || (tween instanceof SimpleTimeline) || ((isDC = (tween.target === tween.vars.onComplete)) && delayedCalls) || (tweens && !isDC)) {
+					tween.paused(pause);
+				}
+			}
+		};
+		
+		TweenMax.pauseAll = function(tweens, delayedCalls, timelines) {
+			_changePause(true, tweens, delayedCalls, timelines);
+		};
+		
+		TweenMax.resumeAll = function(tweens, delayedCalls, timelines) {
+			_changePause(false, tweens, delayedCalls, timelines);
+		};
+
+		TweenMax.globalTimeScale = function(value) {
+			var tl = Animation._rootTimeline,
+				t = TweenLite.ticker.time;
+			if (!arguments.length) {
+				return tl._timeScale;
+			}
+			value = value || _tinyNum; //can't allow zero because it'll throw the math off
+			tl._startTime = t - ((t - tl._startTime) * tl._timeScale / value);
+			tl = Animation._rootFramesTimeline;
+			t = TweenLite.ticker.frame;
+			tl._startTime = t - ((t - tl._startTime) * tl._timeScale / value);
+			tl._timeScale = Animation._rootTimeline._timeScale = value;
+			return value;
+		};
+		
+	
+//---- GETTERS / SETTERS ----------------------------------------------------------------------------------------------------------
+		
+		p.progress = function(value, suppressEvents) {
+			return (!arguments.length) ? this._time / this.duration() : this.totalTime( this.duration() * ((this._yoyo && (this._cycle & 1) !== 0) ? 1 - value : value) + (this._cycle * (this._duration + this._repeatDelay)), suppressEvents);
+		};
+		
+		p.totalProgress = function(value, suppressEvents) {
+			return (!arguments.length) ? this._totalTime / this.totalDuration() : this.totalTime( this.totalDuration() * value, suppressEvents);
+		};
+		
+		p.time = function(value, suppressEvents) {
+			if (!arguments.length) {
+				return this._time;
+			}
+			if (this._dirty) {
+				this.totalDuration();
+			}
+			if (value > this._duration) {
+				value = this._duration;
+			}
+			if (this._yoyo && (this._cycle & 1) !== 0) {
+				value = (this._duration - value) + (this._cycle * (this._duration + this._repeatDelay));
+			} else if (this._repeat !== 0) {
+				value += this._cycle * (this._duration + this._repeatDelay);
+			}
+			return this.totalTime(value, suppressEvents);
+		};
+
+		p.duration = function(value) {
+			if (!arguments.length) {
+				return this._duration; //don't set _dirty = false because there could be repeats that haven't been factored into the _totalDuration yet. Otherwise, if you create a repeated TweenMax and then immediately check its duration(), it would cache the value and the totalDuration would not be correct, thus repeats wouldn't take effect.
+			}
+			return Animation.prototype.duration.call(this, value);
+		};
+
+		p.totalDuration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					//instead of Infinity, we use 999999999999 so that we can accommodate reverses
+					this._totalDuration = (this._repeat === -1) ? 999999999999 : this._duration * (this._repeat + 1) + (this._repeatDelay * this._repeat);
+					this._dirty = false;
+				}
+				return this._totalDuration;
+			}
+			return (this._repeat === -1) ? this : this.duration( (value - (this._repeat * this._repeatDelay)) / (this._repeat + 1) );
+		};
+		
+		p.repeat = function(value) {
+			if (!arguments.length) {
+				return this._repeat;
+			}
+			this._repeat = value;
+			return this._uncache(true);
+		};
+		
+		p.repeatDelay = function(value) {
+			if (!arguments.length) {
+				return this._repeatDelay;
+			}
+			this._repeatDelay = value;
+			return this._uncache(true);
+		};
+		
+		p.yoyo = function(value) {
+			if (!arguments.length) {
+				return this._yoyo;
+			}
+			this._yoyo = value;
+			return this;
+		};
+		
+		
+		return TweenMax;
+		
+	}, true);
+
+
+
+
+
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * TimelineLite
+ * ----------------------------------------------------------------
+ */
+	_gsScope._gsDefine("TimelineLite", ["core.Animation","core.SimpleTimeline","TweenLite"], function(Animation, SimpleTimeline, TweenLite) {
+
+		var TimelineLite = function(vars) {
+				SimpleTimeline.call(this, vars);
+				this._labels = {};
+				this.autoRemoveChildren = (this.vars.autoRemoveChildren === true);
+				this.smoothChildTiming = (this.vars.smoothChildTiming === true);
+				this._sortChildren = true;
+				this._onUpdate = this.vars.onUpdate;
+				var v = this.vars,
+					val, p;
+				for (p in v) {
+					val = v[p];
+					if (_isArray(val)) if (val.join("").indexOf("{self}") !== -1) {
+						v[p] = this._swapSelfInParams(val);
+					}
+				}
+				if (_isArray(v.tweens)) {
+					this.add(v.tweens, 0, v.align, v.stagger);
+				}
+			},
+			_tinyNum = 0.0000000001,
+			TweenLiteInternals = TweenLite._internals,
+			_internals = TimelineLite._internals = {},
+			_isSelector = TweenLiteInternals.isSelector,
+			_isArray = TweenLiteInternals.isArray,
+			_lazyTweens = TweenLiteInternals.lazyTweens,
+			_lazyRender = TweenLiteInternals.lazyRender,
+			_globals = _gsScope._gsDefine.globals,
+			_copy = function(vars) {
+				var copy = {}, p;
+				for (p in vars) {
+					copy[p] = vars[p];
+				}
+				return copy;
+			},
+			_applyCycle = function(vars, targets, i) {
+				var alt = vars.cycle,
+					p, val;
+				for (p in alt) {
+					val = alt[p];
+					vars[p] = (typeof(val) === "function") ? val(i, targets[i]) : val[i % val.length];
+				}
+				delete vars.cycle;
+			},
+			_pauseCallback = _internals.pauseCallback = function() {},
+			_slice = function(a) { //don't use [].slice because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+				var b = [],
+					l = a.length,
+					i;
+				for (i = 0; i !== l; b.push(a[i++]));
+				return b;
+			},
+			p = TimelineLite.prototype = new SimpleTimeline();
+
+		TimelineLite.version = "1.20.2";
+		p.constructor = TimelineLite;
+		p.kill()._gc = p._forcingPlayhead = p._hasPause = false;
+
+		/* might use later...
+		//translates a local time inside an animation to the corresponding time on the root/global timeline, factoring in all nesting and timeScales.
+		function localToGlobal(time, animation) {
+			while (animation) {
+				time = (time / animation._timeScale) + animation._startTime;
+				animation = animation.timeline;
+			}
+			return time;
+		}
+
+		//translates the supplied time on the root/global timeline into the corresponding local time inside a particular animation, factoring in all nesting and timeScales
+		function globalToLocal(time, animation) {
+			var scale = 1;
+			time -= localToGlobal(0, animation);
+			while (animation) {
+				scale *= animation._timeScale;
+				animation = animation.timeline;
+			}
+			return time * scale;
+		}
+		*/
+
+		p.to = function(target, duration, vars, position) {
+			var Engine = (vars.repeat && _globals.TweenMax) || TweenLite;
+			return duration ? this.add( new Engine(target, duration, vars), position) : this.set(target, vars, position);
+		};
+
+		p.from = function(target, duration, vars, position) {
+			return this.add( ((vars.repeat && _globals.TweenMax) || TweenLite).from(target, duration, vars), position);
+		};
+
+		p.fromTo = function(target, duration, fromVars, toVars, position) {
+			var Engine = (toVars.repeat && _globals.TweenMax) || TweenLite;
+			return duration ? this.add( Engine.fromTo(target, duration, fromVars, toVars), position) : this.set(target, toVars, position);
+		};
+
+		p.staggerTo = function(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			var tl = new TimelineLite({onComplete:onCompleteAll, onCompleteParams:onCompleteAllParams, callbackScope:onCompleteAllScope, smoothChildTiming:this.smoothChildTiming}),
+				cycle = vars.cycle,
+				copy, i;
+			if (typeof(targets) === "string") {
+				targets = TweenLite.selector(targets) || targets;
+			}
+			targets = targets || [];
+			if (_isSelector(targets)) { //senses if the targets object is a selector. If it is, we should translate it into an array.
+				targets = _slice(targets);
+			}
+			stagger = stagger || 0;
+			if (stagger < 0) {
+				targets = _slice(targets);
+				targets.reverse();
+				stagger *= -1;
+			}
+			for (i = 0; i < targets.length; i++) {
+				copy = _copy(vars);
+				if (copy.startAt) {
+					copy.startAt = _copy(copy.startAt);
+					if (copy.startAt.cycle) {
+						_applyCycle(copy.startAt, targets, i);
+					}
+				}
+				if (cycle) {
+					_applyCycle(copy, targets, i);
+					if (copy.duration != null) {
+						duration = copy.duration;
+						delete copy.duration;
+					}
+				}
+				tl.to(targets[i], duration, copy, i * stagger);
+			}
+			return this.add(tl, position);
+		};
+
+		p.staggerFrom = function(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			vars.immediateRender = (vars.immediateRender != false);
+			vars.runBackwards = true;
+			return this.staggerTo(targets, duration, vars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+
+		p.staggerFromTo = function(targets, duration, fromVars, toVars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return this.staggerTo(targets, duration, toVars, stagger, position, onCompleteAll, onCompleteAllParams, onCompleteAllScope);
+		};
+
+		p.call = function(callback, params, scope, position) {
+			return this.add( TweenLite.delayedCall(0, callback, params, scope), position);
+		};
+
+		p.set = function(target, vars, position) {
+			position = this._parseTimeOrLabel(position, 0, true);
+			if (vars.immediateRender == null) {
+				vars.immediateRender = (position === this._time && !this._paused);
+			}
+			return this.add( new TweenLite(target, 0, vars), position);
+		};
+
+		TimelineLite.exportRoot = function(vars, ignoreDelayedCalls) {
+			vars = vars || {};
+			if (vars.smoothChildTiming == null) {
+				vars.smoothChildTiming = true;
+			}
+			var tl = new TimelineLite(vars),
+				root = tl._timeline,
+				tween, next;
+			if (ignoreDelayedCalls == null) {
+				ignoreDelayedCalls = true;
+			}
+			root._remove(tl, true);
+			tl._startTime = 0;
+			tl._rawPrevTime = tl._time = tl._totalTime = root._time;
+			tween = root._first;
+			while (tween) {
+				next = tween._next;
+				if (!ignoreDelayedCalls || !(tween instanceof TweenLite && tween.target === tween.vars.onComplete)) {
+					tl.add(tween, tween._startTime - tween._delay);
+				}
+				tween = next;
+			}
+			root.add(tl, 0);
+			return tl;
+		};
+
+		p.add = function(value, position, align, stagger) {
+			var curTime, l, i, child, tl, beforeRawTime;
+			if (typeof(position) !== "number") {
+				position = this._parseTimeOrLabel(position, 0, true, value);
+			}
+			if (!(value instanceof Animation)) {
+				if ((value instanceof Array) || (value && value.push && _isArray(value))) {
+					align = align || "normal";
+					stagger = stagger || 0;
+					curTime = position;
+					l = value.length;
+					for (i = 0; i < l; i++) {
+						if (_isArray(child = value[i])) {
+							child = new TimelineLite({tweens:child});
+						}
+						this.add(child, curTime);
+						if (typeof(child) !== "string" && typeof(child) !== "function") {
+							if (align === "sequence") {
+								curTime = child._startTime + (child.totalDuration() / child._timeScale);
+							} else if (align === "start") {
+								child._startTime -= child.delay();
+							}
+						}
+						curTime += stagger;
+					}
+					return this._uncache(true);
+				} else if (typeof(value) === "string") {
+					return this.addLabel(value, position);
+				} else if (typeof(value) === "function") {
+					value = TweenLite.delayedCall(0, value);
+				} else {
+					throw("Cannot add " + value + " into the timeline; it is not a tween, timeline, function, or string.");
+				}
+			}
+
+			SimpleTimeline.prototype.add.call(this, value, position);
+
+			if (value._time) { //in case, for example, the _startTime is moved on a tween that has already rendered. Imagine it's at its end state, then the startTime is moved WAY later (after the end of this timeline), it should render at its beginning.
+				value.render((this.rawTime() - value._startTime) * value._timeScale, false, false);
+			}
+
+			//if the timeline has already ended but the inserted tween/timeline extends the duration, we should enable this timeline again so that it renders properly. We should also align the playhead with the parent timeline's when appropriate.
+			if (this._gc || this._time === this._duration) if (!this._paused) if (this._duration < this.duration()) {
+				//in case any of the ancestors had completed but should now be enabled...
+				tl = this;
+				beforeRawTime = (tl.rawTime() > value._startTime); //if the tween is placed on the timeline so that it starts BEFORE the current rawTime, we should align the playhead (move the timeline). This is because sometimes users will create a timeline, let it finish, and much later append a tween and expect it to run instead of jumping to its end state. While technically one could argue that it should jump to its end state, that's not what users intuitively expect.
+				while (tl._timeline) {
+					if (beforeRawTime && tl._timeline.smoothChildTiming) {
+						tl.totalTime(tl._totalTime, true); //moves the timeline (shifts its startTime) if necessary, and also enables it.
+					} else if (tl._gc) {
+						tl._enabled(true, false);
+					}
+					tl = tl._timeline;
+				}
+			}
+
+			return this;
+		};
+
+		p.remove = function(value) {
+			if (value instanceof Animation) {
+				this._remove(value, false);
+				var tl = value._timeline = value.vars.useFrames ? Animation._rootFramesTimeline : Animation._rootTimeline; //now that it's removed, default it to the root timeline so that if it gets played again, it doesn't jump back into this timeline.
+				value._startTime = (value._paused ? value._pauseTime : tl._time) - ((!value._reversed ? value._totalTime : value.totalDuration() - value._totalTime) / value._timeScale); //ensure that if it gets played again, the timing is correct.
+				return this;
+			} else if (value instanceof Array || (value && value.push && _isArray(value))) {
+				var i = value.length;
+				while (--i > -1) {
+					this.remove(value[i]);
+				}
+				return this;
+			} else if (typeof(value) === "string") {
+				return this.removeLabel(value);
+			}
+			return this.kill(null, value);
+		};
+
+		p._remove = function(tween, skipDisable) {
+			SimpleTimeline.prototype._remove.call(this, tween, skipDisable);
+			var last = this._last;
+			if (!last) {
+				this._time = this._totalTime = this._duration = this._totalDuration = 0;
+			} else if (this._time > this.duration()) {
+				this._time = this._duration;
+				this._totalTime = this._totalDuration;
+			}
+			return this;
+		};
+
+		p.append = function(value, offsetOrLabel) {
+			return this.add(value, this._parseTimeOrLabel(null, offsetOrLabel, true, value));
+		};
+
+		p.insert = p.insertMultiple = function(value, position, align, stagger) {
+			return this.add(value, position || 0, align, stagger);
+		};
+
+		p.appendMultiple = function(tweens, offsetOrLabel, align, stagger) {
+			return this.add(tweens, this._parseTimeOrLabel(null, offsetOrLabel, true, tweens), align, stagger);
+		};
+
+		p.addLabel = function(label, position) {
+			this._labels[label] = this._parseTimeOrLabel(position);
+			return this;
+		};
+
+		p.addPause = function(position, callback, params, scope) {
+			var t = TweenLite.delayedCall(0, _pauseCallback, params, scope || this);
+			t.vars.onComplete = t.vars.onReverseComplete = callback;
+			t.data = "isPause";
+			this._hasPause = true;
+			return this.add(t, position);
+		};
+
+		p.removeLabel = function(label) {
+			delete this._labels[label];
+			return this;
+		};
+
+		p.getLabelTime = function(label) {
+			return (this._labels[label] != null) ? this._labels[label] : -1;
+		};
+
+		p._parseTimeOrLabel = function(timeOrLabel, offsetOrLabel, appendIfAbsent, ignore) {
+			var clippedDuration, i;
+			//if we're about to add a tween/timeline (or an array of them) that's already a child of this timeline, we should remove it first so that it doesn't contaminate the duration().
+			if (ignore instanceof Animation && ignore.timeline === this) {
+				this.remove(ignore);
+			} else if (ignore && ((ignore instanceof Array) || (ignore.push && _isArray(ignore)))) {
+				i = ignore.length;
+				while (--i > -1) {
+					if (ignore[i] instanceof Animation && ignore[i].timeline === this) {
+						this.remove(ignore[i]);
+					}
+				}
+			}
+			clippedDuration = (this.duration() > 99999999999) ? this.recent().endTime(false) : this._duration; //in case there's a child that infinitely repeats, users almost never intend for the insertion point of a new child to be based on a SUPER long value like that so we clip it and assume the most recently-added child's endTime should be used instead.
+			if (typeof(offsetOrLabel) === "string") {
+				return this._parseTimeOrLabel(offsetOrLabel, (appendIfAbsent && typeof(timeOrLabel) === "number" && this._labels[offsetOrLabel] == null) ? timeOrLabel - clippedDuration : 0, appendIfAbsent);
+			}
+			offsetOrLabel = offsetOrLabel || 0;
+			if (typeof(timeOrLabel) === "string" && (isNaN(timeOrLabel) || this._labels[timeOrLabel] != null)) { //if the string is a number like "1", check to see if there's a label with that name, otherwise interpret it as a number (absolute value).
+				i = timeOrLabel.indexOf("=");
+				if (i === -1) {
+					if (this._labels[timeOrLabel] == null) {
+						return appendIfAbsent ? (this._labels[timeOrLabel] = clippedDuration + offsetOrLabel) : offsetOrLabel;
+					}
+					return this._labels[timeOrLabel] + offsetOrLabel;
+				}
+				offsetOrLabel = parseInt(timeOrLabel.charAt(i-1) + "1", 10) * Number(timeOrLabel.substr(i+1));
+				timeOrLabel = (i > 1) ? this._parseTimeOrLabel(timeOrLabel.substr(0, i-1), 0, appendIfAbsent) : clippedDuration;
+			} else if (timeOrLabel == null) {
+				timeOrLabel = clippedDuration;
+			}
+			return Number(timeOrLabel) + offsetOrLabel;
+		};
+
+		p.seek = function(position, suppressEvents) {
+			return this.totalTime((typeof(position) === "number") ? position : this._parseTimeOrLabel(position), (suppressEvents !== false));
+		};
+
+		p.stop = function() {
+			return this.paused(true);
+		};
+
+		p.gotoAndPlay = function(position, suppressEvents) {
+			return this.play(position, suppressEvents);
+		};
+
+		p.gotoAndStop = function(position, suppressEvents) {
+			return this.pause(position, suppressEvents);
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			if (this._gc) {
+				this._enabled(true, false);
+			}
+			var totalDur = (!this._dirty) ? this._totalDuration : this.totalDuration(),
+				prevTime = this._time,
+				prevStart = this._startTime,
+				prevTimeScale = this._timeScale,
+				prevPaused = this._paused,
+				tween, isComplete, next, callback, internalForce, pauseTween, curTime;
+			if (time >= totalDur - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				this._totalTime = this._time = totalDur;
+				if (!this._reversed) if (!this._hasPausedChild()) {
+					isComplete = true;
+					callback = "onComplete";
+					internalForce = !!this._timeline.autoRemoveChildren; //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+					if (this._duration === 0) if ((time <= 0 && time >= -0.0000001) || this._rawPrevTime < 0 || this._rawPrevTime === _tinyNum) if (this._rawPrevTime !== time && this._first) {
+						internalForce = true;
+						if (this._rawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+				}
+				this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				time = totalDur + 0.0001; //to avoid occasional floating point rounding errors - sometimes child tweens/timelines were not being fully completed (their progress might be 0.999999999999998 instead of 1 because when _time - tween._startTime is performed, floating point errors would return a value that was SLIGHTLY off). Try (999999999999.7 - 999999999999) * 1 = 0.699951171875 instead of 0.7.
+
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				this._totalTime = this._time = 0;
+				if (prevTime !== 0 || (this._duration === 0 && this._rawPrevTime !== _tinyNum && (this._rawPrevTime > 0 || (time < 0 && this._rawPrevTime >= 0)))) {
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (this._timeline.autoRemoveChildren && this._reversed) { //ensures proper GC if a timeline is resumed after it's finished reversing.
+						internalForce = isComplete = true;
+						callback = "onReverseComplete";
+					} else if (this._rawPrevTime >= 0 && this._first) { //when going back beyond the start, force a render so that zero-duration tweens that sit at the very beginning render their start values properly. Otherwise, if the parent timeline's playhead lands exactly at this timeline's startTime, and then moves backwards, the zero-duration tweens at the beginning would still be at their end state.
+						internalForce = true;
+					}
+					this._rawPrevTime = time;
+				} else {
+					this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					if (time === 0 && isComplete) { //if there's a zero-duration tween at the very beginning of a timeline and the playhead lands EXACTLY at time 0, that tween will correctly render its end values, but we need to keep the timeline alive for one more render so that the beginning values render properly as the parent's playhead keeps moving beyond the begining. Imagine obj.x starts at 0 and then we do tl.set(obj, {x:100}).to(obj, 1, {x:200}) and then later we tl.reverse()...the goal is to have obj.x revert to 0. If the playhead happens to land on exactly 0, without this chunk of code, it'd complete the timeline and remove it from the rendering queue (not good).
+						tween = this._first;
+						while (tween && tween._startTime === 0) {
+							if (!tween._duration) {
+								isComplete = false;
+							}
+							tween = tween._next;
+						}
+					}
+					time = 0; //to avoid occasional floating point rounding errors (could cause problems especially with zero-duration tweens at the very beginning of the timeline)
+					if (!this._initted) {
+						internalForce = true;
+					}
+				}
+
+			} else {
+
+				if (this._hasPause && !this._forcingPlayhead && !suppressEvents) {
+					if (time >= prevTime) {
+						tween = this._first;
+						while (tween && tween._startTime <= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && !tween.ratio && !(tween._startTime === 0 && this._rawPrevTime === 0)) {
+								pauseTween = tween;
+							}
+							tween = tween._next;
+						}
+					} else {
+						tween = this._last;
+						while (tween && tween._startTime >= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && tween._rawPrevTime > 0) {
+								pauseTween = tween;
+							}
+							tween = tween._prev;
+						}
+					}
+					if (pauseTween) {
+						this._time = time = pauseTween._startTime;
+						this._totalTime = time + (this._cycle * (this._totalDuration + this._repeatDelay));
+					}
+				}
+
+				this._totalTime = this._time = this._rawPrevTime = time;
+			}
+			if ((this._time === prevTime || !this._first) && !force && !internalForce && !pauseTween) {
+				return;
+			} else if (!this._initted) {
+				this._initted = true;
+			}
+
+			if (!this._active) if (!this._paused && this._time !== prevTime && time > 0) {
+				this._active = true;  //so that if the user renders the timeline (as opposed to the parent timeline rendering it), it is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the timeline already finished but the user manually re-renders it as halfway done, for example.
+			}
+
+			if (prevTime === 0) if (this.vars.onStart) if (this._time !== 0 || !this._duration) if (!suppressEvents) {
+				this._callback("onStart");
+			}
+
+			curTime = this._time;
+			if (curTime >= prevTime) {
+				tween = this._first;
+				while (tween) {
+					next = tween._next; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= curTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			} else {
+				tween = this._last;
+				while (tween) {
+					next = tween._prev; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= prevTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							pauseTween = tween._prev; //the linked list is organized by _startTime, thus it's possible that a tween could start BEFORE the pause and end after it, in which case it would be positioned before the pause tween in the linked list, but we should render it before we pause() the timeline and cease rendering. This is only a concern when going in reverse.
+							while (pauseTween && pauseTween.endTime() > this._time) {
+								pauseTween.render( (pauseTween._reversed ? pauseTween.totalDuration() - ((time - pauseTween._startTime) * pauseTween._timeScale) : (time - pauseTween._startTime) * pauseTween._timeScale), suppressEvents, force);
+								pauseTween = pauseTween._prev;
+							}
+							pauseTween = null;
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			}
+
+			if (this._onUpdate) if (!suppressEvents) {
+				if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onUpdate on a timeline that reports/checks tweened values.
+					_lazyRender();
+				}
+				this._callback("onUpdate");
+			}
+
+			if (callback) if (!this._gc) if (prevStart === this._startTime || prevTimeScale !== this._timeScale) if (this._time === 0 || totalDur >= this.totalDuration()) { //if one of the tweens that was rendered altered this timeline's startTime (like if an onComplete reversed the timeline), it probably isn't complete. If it is, don't worry, because whatever call altered the startTime would complete if it was necessary at the new time. The only exception is the timeScale property. Also check _gc because there's a chance that kill() could be called in an onUpdate
+				if (isComplete) {
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onComplete on a timeline that reports/checks tweened values.
+						_lazyRender();
+					}
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+			}
+		};
+
+		p._hasPausedChild = function() {
+			var tween = this._first;
+			while (tween) {
+				if (tween._paused || ((tween instanceof TimelineLite) && tween._hasPausedChild())) {
+					return true;
+				}
+				tween = tween._next;
+			}
+			return false;
+		};
+
+		p.getChildren = function(nested, tweens, timelines, ignoreBeforeTime) {
+			ignoreBeforeTime = ignoreBeforeTime || -9999999999;
+			var a = [],
+				tween = this._first,
+				cnt = 0;
+			while (tween) {
+				if (tween._startTime < ignoreBeforeTime) {
+					//do nothing
+				} else if (tween instanceof TweenLite) {
+					if (tweens !== false) {
+						a[cnt++] = tween;
+					}
+				} else {
+					if (timelines !== false) {
+						a[cnt++] = tween;
+					}
+					if (nested !== false) {
+						a = a.concat(tween.getChildren(true, tweens, timelines));
+						cnt = a.length;
+					}
+				}
+				tween = tween._next;
+			}
+			return a;
+		};
+
+		p.getTweensOf = function(target, nested) {
+			var disabled = this._gc,
+				a = [],
+				cnt = 0,
+				tweens, i;
+			if (disabled) {
+				this._enabled(true, true); //getTweensOf() filters out disabled tweens, and we have to mark them as _gc = true when the timeline completes in order to allow clean garbage collection, so temporarily re-enable the timeline here.
+			}
+			tweens = TweenLite.getTweensOf(target);
+			i = tweens.length;
+			while (--i > -1) {
+				if (tweens[i].timeline === this || (nested && this._contains(tweens[i]))) {
+					a[cnt++] = tweens[i];
+				}
+			}
+			if (disabled) {
+				this._enabled(false, true);
+			}
+			return a;
+		};
+
+		p.recent = function() {
+			return this._recent;
+		};
+
+		p._contains = function(tween) {
+			var tl = tween.timeline;
+			while (tl) {
+				if (tl === this) {
+					return true;
+				}
+				tl = tl.timeline;
+			}
+			return false;
+		};
+
+		p.shiftChildren = function(amount, adjustLabels, ignoreBeforeTime) {
+			ignoreBeforeTime = ignoreBeforeTime || 0;
+			var tween = this._first,
+				labels = this._labels,
+				p;
+			while (tween) {
+				if (tween._startTime >= ignoreBeforeTime) {
+					tween._startTime += amount;
+				}
+				tween = tween._next;
+			}
+			if (adjustLabels) {
+				for (p in labels) {
+					if (labels[p] >= ignoreBeforeTime) {
+						labels[p] += amount;
+					}
+				}
+			}
+			return this._uncache(true);
+		};
+
+		p._kill = function(vars, target) {
+			if (!vars && !target) {
+				return this._enabled(false, false);
+			}
+			var tweens = (!target) ? this.getChildren(true, true, false) : this.getTweensOf(target),
+				i = tweens.length,
+				changed = false;
+			while (--i > -1) {
+				if (tweens[i]._kill(vars, target)) {
+					changed = true;
+				}
+			}
+			return changed;
+		};
+
+		p.clear = function(labels) {
+			var tweens = this.getChildren(false, true, true),
+				i = tweens.length;
+			this._time = this._totalTime = 0;
+			while (--i > -1) {
+				tweens[i]._enabled(false, false);
+			}
+			if (labels !== false) {
+				this._labels = {};
+			}
+			return this._uncache(true);
+		};
+
+		p.invalidate = function() {
+			var tween = this._first;
+			while (tween) {
+				tween.invalidate();
+				tween = tween._next;
+			}
+			return Animation.prototype.invalidate.call(this);;
+		};
+
+		p._enabled = function(enabled, ignoreTimeline) {
+			if (enabled === this._gc) {
+				var tween = this._first;
+				while (tween) {
+					tween._enabled(enabled, true);
+					tween = tween._next;
+				}
+			}
+			return SimpleTimeline.prototype._enabled.call(this, enabled, ignoreTimeline);
+		};
+
+		p.totalTime = function(time, suppressEvents, uncapped) {
+			this._forcingPlayhead = true;
+			var val = Animation.prototype.totalTime.apply(this, arguments);
+			this._forcingPlayhead = false;
+			return val;
+		};
+
+		p.duration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					this.totalDuration(); //just triggers recalculation
+				}
+				return this._duration;
+			}
+			if (this.duration() !== 0 && value !== 0) {
+				this.timeScale(this._duration / value);
+			}
+			return this;
+		};
+
+		p.totalDuration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					var max = 0,
+						tween = this._last,
+						prevStart = 999999999999,
+						prev, end;
+					while (tween) {
+						prev = tween._prev; //record it here in case the tween changes position in the sequence...
+						if (tween._dirty) {
+							tween.totalDuration(); //could change the tween._startTime, so make sure the tween's cache is clean before analyzing it.
+						}
+						if (tween._startTime > prevStart && this._sortChildren && !tween._paused) { //in case one of the tweens shifted out of order, it needs to be re-inserted into the correct position in the sequence
+							this.add(tween, tween._startTime - tween._delay);
+						} else {
+							prevStart = tween._startTime;
+						}
+						if (tween._startTime < 0 && !tween._paused) { //children aren't allowed to have negative startTimes unless smoothChildTiming is true, so adjust here if one is found.
+							max -= tween._startTime;
+							if (this._timeline.smoothChildTiming) {
+								this._startTime += tween._startTime / this._timeScale;
+							}
+							this.shiftChildren(-tween._startTime, false, -9999999999);
+							prevStart = 0;
+						}
+						end = tween._startTime + (tween._totalDuration / tween._timeScale);
+						if (end > max) {
+							max = end;
+						}
+						tween = prev;
+					}
+					this._duration = this._totalDuration = max;
+					this._dirty = false;
+				}
+				return this._totalDuration;
+			}
+			return (value && this.totalDuration()) ? this.timeScale(this._totalDuration / value) : this;
+		};
+
+		p.paused = function(value) {
+			if (!value) { //if there's a pause directly at the spot from where we're unpausing, skip it.
+				var tween = this._first,
+					time = this._time;
+				while (tween) {
+					if (tween._startTime === time && tween.data === "isPause") {
+						tween._rawPrevTime = 0; //remember, _rawPrevTime is how zero-duration tweens/callbacks sense directionality and determine whether or not to fire. If _rawPrevTime is the same as _startTime on the next render, it won't fire.
+					}
+					tween = tween._next;
+				}
+			}
+			return Animation.prototype.paused.apply(this, arguments);
+		};
+
+		p.usesFrames = function() {
+			var tl = this._timeline;
+			while (tl._timeline) {
+				tl = tl._timeline;
+			}
+			return (tl === Animation._rootFramesTimeline);
+		};
+
+		p.rawTime = function(wrapRepeats) {
+			return (wrapRepeats && (this._paused || (this._repeat && this.time() > 0 && this.totalProgress() < 1))) ? this._totalTime % (this._duration + this._repeatDelay) : this._paused ? this._totalTime : (this._timeline.rawTime(wrapRepeats) - this._startTime) * this._timeScale;
+		};
+
+		return TimelineLite;
+
+	}, true);
+
+
+
+
+
+
+
+
+	
+	
+	
+	
+	
+/*
+ * ----------------------------------------------------------------
+ * TimelineMax
+ * ----------------------------------------------------------------
+ */
+	_gsScope._gsDefine("TimelineMax", ["TimelineLite","TweenLite","easing.Ease"], function(TimelineLite, TweenLite, Ease) {
+
+		var TimelineMax = function(vars) {
+				TimelineLite.call(this, vars);
+				this._repeat = this.vars.repeat || 0;
+				this._repeatDelay = this.vars.repeatDelay || 0;
+				this._cycle = 0;
+				this._yoyo = (this.vars.yoyo === true);
+				this._dirty = true;
+			},
+			_tinyNum = 0.0000000001,
+			TweenLiteInternals = TweenLite._internals,
+			_lazyTweens = TweenLiteInternals.lazyTweens,
+			_lazyRender = TweenLiteInternals.lazyRender,
+			_globals = _gsScope._gsDefine.globals,
+			_easeNone = new Ease(null, null, 1, 0),
+			p = TimelineMax.prototype = new TimelineLite();
+
+		p.constructor = TimelineMax;
+		p.kill()._gc = false;
+		TimelineMax.version = "1.20.2";
+
+		p.invalidate = function() {
+			this._yoyo = (this.vars.yoyo === true);
+			this._repeat = this.vars.repeat || 0;
+			this._repeatDelay = this.vars.repeatDelay || 0;
+			this._uncache(true);
+			return TimelineLite.prototype.invalidate.call(this);
+		};
+
+		p.addCallback = function(callback, position, params, scope) {
+			return this.add( TweenLite.delayedCall(0, callback, params, scope), position);
+		};
+
+		p.removeCallback = function(callback, position) {
+			if (callback) {
+				if (position == null) {
+					this._kill(null, callback);
+				} else {
+					var a = this.getTweensOf(callback, false),
+						i = a.length,
+						time = this._parseTimeOrLabel(position);
+					while (--i > -1) {
+						if (a[i]._startTime === time) {
+							a[i]._enabled(false, false);
+						}
+					}
+				}
+			}
+			return this;
+		};
+
+		p.removePause = function(position) {
+			return this.removeCallback(TimelineLite._internals.pauseCallback, position);
+		};
+
+		p.tweenTo = function(position, vars) {
+			vars = vars || {};
+			var copy = {ease:_easeNone, useFrames:this.usesFrames(), immediateRender:false},
+				Engine = (vars.repeat && _globals.TweenMax) || TweenLite,
+				duration, p, t;
+			for (p in vars) {
+				copy[p] = vars[p];
+			}
+			copy.time = this._parseTimeOrLabel(position);
+			duration = (Math.abs(Number(copy.time) - this._time) / this._timeScale) || 0.001;
+			t = new Engine(this, duration, copy);
+			copy.onStart = function() {
+				t.target.paused(true);
+				if (t.vars.time !== t.target.time() && duration === t.duration()) { //don't make the duration zero - if it's supposed to be zero, don't worry because it's already initting the tween and will complete immediately, effectively making the duration zero anyway. If we make duration zero, the tween won't run at all.
+					t.duration( Math.abs( t.vars.time - t.target.time()) / t.target._timeScale );
+				}
+				if (vars.onStart) { //in case the user had an onStart in the vars - we don't want to overwrite it.
+					vars.onStart.apply(vars.onStartScope || vars.callbackScope || t, vars.onStartParams || []); //don't use t._callback("onStart") or it'll point to the copy.onStart and we'll get a recursion error.
+				}
+			};
+			return t;
+		};
+
+		p.tweenFromTo = function(fromPosition, toPosition, vars) {
+			vars = vars || {};
+			fromPosition = this._parseTimeOrLabel(fromPosition);
+			vars.startAt = {onComplete:this.seek, onCompleteParams:[fromPosition], callbackScope:this};
+			vars.immediateRender = (vars.immediateRender !== false);
+			var t = this.tweenTo(toPosition, vars);
+			return t.duration((Math.abs( t.vars.time - fromPosition) / this._timeScale) || 0.001);
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			if (this._gc) {
+				this._enabled(true, false);
+			}
+			var totalDur = (!this._dirty) ? this._totalDuration : this.totalDuration(),
+				dur = this._duration,
+				prevTime = this._time,
+				prevTotalTime = this._totalTime,
+				prevStart = this._startTime,
+				prevTimeScale = this._timeScale,
+				prevRawPrevTime = this._rawPrevTime,
+				prevPaused = this._paused,
+				prevCycle = this._cycle,
+				tween, isComplete, next, callback, internalForce, cycleDuration, pauseTween, curTime;
+			if (time >= totalDur - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				if (!this._locked) {
+					this._totalTime = totalDur;
+					this._cycle = this._repeat;
+				}
+				if (!this._reversed) if (!this._hasPausedChild()) {
+					isComplete = true;
+					callback = "onComplete";
+					internalForce = !!this._timeline.autoRemoveChildren; //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+					if (this._duration === 0) if ((time <= 0 && time >= -0.0000001) || prevRawPrevTime < 0 || prevRawPrevTime === _tinyNum) if (prevRawPrevTime !== time && this._first) {
+						internalForce = true;
+						if (prevRawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+				}
+				this._rawPrevTime = (this._duration || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				if (this._yoyo && (this._cycle & 1) !== 0) {
+					this._time = time = 0;
+				} else {
+					this._time = dur;
+					time = dur + 0.0001; //to avoid occasional floating point rounding errors - sometimes child tweens/timelines were not being fully completed (their progress might be 0.999999999999998 instead of 1 because when _time - tween._startTime is performed, floating point errors would return a value that was SLIGHTLY off). Try (999999999999.7 - 999999999999) * 1 = 0.699951171875 instead of 0.7. We cannot do less then 0.0001 because the same issue can occur when the duration is extremely large like 999999999999 in which case adding 0.00000001, for example, causes it to act like nothing was added.
+				}
+
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				if (!this._locked) {
+					this._totalTime = this._cycle = 0;
+				}
+				this._time = 0;
+				if (prevTime !== 0 || (dur === 0 && prevRawPrevTime !== _tinyNum && (prevRawPrevTime > 0 || (time < 0 && prevRawPrevTime >= 0)) && !this._locked)) { //edge case for checking time < 0 && prevRawPrevTime >= 0: a zero-duration fromTo() tween inside a zero-duration timeline (yeah, very rare)
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (this._timeline.autoRemoveChildren && this._reversed) {
+						internalForce = isComplete = true;
+						callback = "onReverseComplete";
+					} else if (prevRawPrevTime >= 0 && this._first) { //when going back beyond the start, force a render so that zero-duration tweens that sit at the very beginning render their start values properly. Otherwise, if the parent timeline's playhead lands exactly at this timeline's startTime, and then moves backwards, the zero-duration tweens at the beginning would still be at their end state.
+						internalForce = true;
+					}
+					this._rawPrevTime = time;
+				} else {
+					this._rawPrevTime = (dur || !suppressEvents || time || this._rawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration timeline or tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					if (time === 0 && isComplete) { //if there's a zero-duration tween at the very beginning of a timeline and the playhead lands EXACTLY at time 0, that tween will correctly render its end values, but we need to keep the timeline alive for one more render so that the beginning values render properly as the parent's playhead keeps moving beyond the begining. Imagine obj.x starts at 0 and then we do tl.set(obj, {x:100}).to(obj, 1, {x:200}) and then later we tl.reverse()...the goal is to have obj.x revert to 0. If the playhead happens to land on exactly 0, without this chunk of code, it'd complete the timeline and remove it from the rendering queue (not good).
+						tween = this._first;
+						while (tween && tween._startTime === 0) {
+							if (!tween._duration) {
+								isComplete = false;
+							}
+							tween = tween._next;
+						}
+					}
+					time = 0; //to avoid occasional floating point rounding errors (could cause problems especially with zero-duration tweens at the very beginning of the timeline)
+					if (!this._initted) {
+						internalForce = true;
+					}
+				}
+
+			} else {
+				if (dur === 0 && prevRawPrevTime < 0) { //without this, zero-duration repeating timelines (like with a simple callback nested at the very beginning and a repeatDelay) wouldn't render the first time through.
+					internalForce = true;
+				}
+				this._time = this._rawPrevTime = time;
+				if (!this._locked) {
+					this._totalTime = time;
+					if (this._repeat !== 0) {
+						cycleDuration = dur + this._repeatDelay;
+						this._cycle = (this._totalTime / cycleDuration) >> 0; //originally _totalTime % cycleDuration but floating point errors caused problems, so I normalized it. (4 % 0.8 should be 0 but it gets reported as 0.79999999!)
+						if (this._cycle !== 0) if (this._cycle === this._totalTime / cycleDuration && prevTotalTime <= time) {
+							this._cycle--; //otherwise when rendered exactly at the end time, it will act as though it is repeating (at the beginning)
+						}
+						this._time = this._totalTime - (this._cycle * cycleDuration);
+						if (this._yoyo) if ((this._cycle & 1) !== 0) {
+							this._time = dur - this._time;
+						}
+						if (this._time > dur) {
+							this._time = dur;
+							time = dur + 0.0001; //to avoid occasional floating point rounding error
+						} else if (this._time < 0) {
+							this._time = time = 0;
+						} else {
+							time = this._time;
+						}
+					}
+				}
+
+				if (this._hasPause && !this._forcingPlayhead && !suppressEvents) {
+					time = this._time;
+					if (time >= prevTime || (this._repeat && prevCycle !== this._cycle)) {
+						tween = this._first;
+						while (tween && tween._startTime <= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && !tween.ratio && !(tween._startTime === 0 && this._rawPrevTime === 0)) {
+								pauseTween = tween;
+							}
+							tween = tween._next;
+						}
+					} else {
+						tween = this._last;
+						while (tween && tween._startTime >= time && !pauseTween) {
+							if (!tween._duration) if (tween.data === "isPause" && tween._rawPrevTime > 0) {
+								pauseTween = tween;
+							}
+							tween = tween._prev;
+						}
+					}
+					if (pauseTween && pauseTween._startTime < dur) {
+						this._time = time = pauseTween._startTime;
+						this._totalTime = time + (this._cycle * (this._totalDuration + this._repeatDelay));
+					}
+				}
+
+			}
+
+			if (this._cycle !== prevCycle) if (!this._locked) {
+				/*
+				make sure children at the end/beginning of the timeline are rendered properly. If, for example,
+				a 3-second long timeline rendered at 2.9 seconds previously, and now renders at 3.2 seconds (which
+				would get transated to 2.8 seconds if the timeline yoyos or 0.2 seconds if it just repeats), there
+				could be a callback or a short tween that's at 2.95 or 3 seconds in which wouldn't render. So
+				we need to push the timeline to the end (and/or beginning depending on its yoyo value). Also we must
+				ensure that zero-duration tweens at the very beginning or end of the TimelineMax work.
+				*/
+				var backwards = (this._yoyo && (prevCycle & 1) !== 0),
+					wrap = (backwards === (this._yoyo && (this._cycle & 1) !== 0)),
+					recTotalTime = this._totalTime,
+					recCycle = this._cycle,
+					recRawPrevTime = this._rawPrevTime,
+					recTime = this._time;
+
+				this._totalTime = prevCycle * dur;
+				if (this._cycle < prevCycle) {
+					backwards = !backwards;
+				} else {
+					this._totalTime += dur;
+				}
+				this._time = prevTime; //temporarily revert _time so that render() renders the children in the correct order. Without this, tweens won't rewind correctly. We could arhictect things in a "cleaner" way by splitting out the rendering queue into a separate method but for performance reasons, we kept it all inside this method.
+
+				this._rawPrevTime = (dur === 0) ? prevRawPrevTime - 0.0001 : prevRawPrevTime;
+				this._cycle = prevCycle;
+				this._locked = true; //prevents changes to totalTime and skips repeat/yoyo behavior when we recursively call render()
+				prevTime = (backwards) ? 0 : dur;
+				this.render(prevTime, suppressEvents, (dur === 0));
+				if (!suppressEvents) if (!this._gc) {
+					if (this.vars.onRepeat) {
+						this._cycle = recCycle; //in case the onRepeat alters the playhead or invalidates(), we shouldn't stay locked or use the previous cycle.
+						this._locked = false;
+						this._callback("onRepeat");
+					}
+				}
+				if (prevTime !== this._time) { //in case there's a callback like onComplete in a nested tween/timeline that changes the playhead position, like via seek(), we should just abort.
+					return;
+				}
+				if (wrap) {
+					this._cycle = prevCycle; //if there's an onRepeat, we reverted this above, so make sure it's set properly again. We also unlocked in that scenario, so reset that too.
+					this._locked = true;
+					prevTime = (backwards) ? dur + 0.0001 : -0.0001;
+					this.render(prevTime, true, false);
+				}
+				this._locked = false;
+				if (this._paused && !prevPaused) { //if the render() triggered callback that paused this timeline, we should abort (very rare, but possible)
+					return;
+				}
+				this._time = recTime;
+				this._totalTime = recTotalTime;
+				this._cycle = recCycle;
+				this._rawPrevTime = recRawPrevTime;
+			}
+
+			if ((this._time === prevTime || !this._first) && !force && !internalForce && !pauseTween) {
+				if (prevTotalTime !== this._totalTime) if (this._onUpdate) if (!suppressEvents) { //so that onUpdate fires even during the repeatDelay - as long as the totalTime changed, we should trigger onUpdate.
+					this._callback("onUpdate");
+				}
+				return;
+			} else if (!this._initted) {
+				this._initted = true;
+			}
+
+			if (!this._active) if (!this._paused && this._totalTime !== prevTotalTime && time > 0) {
+				this._active = true;  //so that if the user renders the timeline (as opposed to the parent timeline rendering it), it is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the timeline already finished but the user manually re-renders it as halfway done, for example.
+			}
+
+			if (prevTotalTime === 0) if (this.vars.onStart) if (this._totalTime !== 0 || !this._totalDuration) if (!suppressEvents) {
+				this._callback("onStart");
+			}
+
+			curTime = this._time;
+			if (curTime >= prevTime) {
+				tween = this._first;
+				while (tween) {
+					next = tween._next; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= this._time && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			} else {
+				tween = this._last;
+				while (tween) {
+					next = tween._prev; //record it here because the value could change after rendering...
+					if (curTime !== this._time || (this._paused && !prevPaused)) { //in case a tween pauses or seeks the timeline when rendering, like inside of an onUpdate/onComplete
+						break;
+					} else if (tween._active || (tween._startTime <= prevTime && !tween._paused && !tween._gc)) {
+						if (pauseTween === tween) {
+							pauseTween = tween._prev; //the linked list is organized by _startTime, thus it's possible that a tween could start BEFORE the pause and end after it, in which case it would be positioned before the pause tween in the linked list, but we should render it before we pause() the timeline and cease rendering. This is only a concern when going in reverse.
+							while (pauseTween && pauseTween.endTime() > this._time) {
+								pauseTween.render( (pauseTween._reversed ? pauseTween.totalDuration() - ((time - pauseTween._startTime) * pauseTween._timeScale) : (time - pauseTween._startTime) * pauseTween._timeScale), suppressEvents, force);
+								pauseTween = pauseTween._prev;
+							}
+							pauseTween = null;
+							this.pause();
+						}
+						if (!tween._reversed) {
+							tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+						} else {
+							tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+						}
+					}
+					tween = next;
+				}
+			}
+
+			if (this._onUpdate) if (!suppressEvents) {
+				if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onUpdate on a timeline that reports/checks tweened values.
+					_lazyRender();
+				}
+				this._callback("onUpdate");
+			}
+			if (callback) if (!this._locked) if (!this._gc) if (prevStart === this._startTime || prevTimeScale !== this._timeScale) if (this._time === 0 || totalDur >= this.totalDuration()) { //if one of the tweens that was rendered altered this timeline's startTime (like if an onComplete reversed the timeline), it probably isn't complete. If it is, don't worry, because whatever call altered the startTime would complete if it was necessary at the new time. The only exception is the timeScale property. Also check _gc because there's a chance that kill() could be called in an onUpdate
+				if (isComplete) {
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when a timeline finishes, users expect things to have rendered fully. Imagine an onComplete on a timeline that reports/checks tweened values.
+						_lazyRender();
+					}
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+			}
+		};
+
+		p.getActive = function(nested, tweens, timelines) {
+			if (nested == null) {
+				nested = true;
+			}
+			if (tweens == null) {
+				tweens = true;
+			}
+			if (timelines == null) {
+				timelines = false;
+			}
+			var a = [],
+				all = this.getChildren(nested, tweens, timelines),
+				cnt = 0,
+				l = all.length,
+				i, tween;
+			for (i = 0; i < l; i++) {
+				tween = all[i];
+				if (tween.isActive()) {
+					a[cnt++] = tween;
+				}
+			}
+			return a;
+		};
+
+
+		p.getLabelAfter = function(time) {
+			if (!time) if (time !== 0) { //faster than isNan()
+				time = this._time;
+			}
+			var labels = this.getLabelsArray(),
+				l = labels.length,
+				i;
+			for (i = 0; i < l; i++) {
+				if (labels[i].time > time) {
+					return labels[i].name;
+				}
+			}
+			return null;
+		};
+
+		p.getLabelBefore = function(time) {
+			if (time == null) {
+				time = this._time;
+			}
+			var labels = this.getLabelsArray(),
+				i = labels.length;
+			while (--i > -1) {
+				if (labels[i].time < time) {
+					return labels[i].name;
+				}
+			}
+			return null;
+		};
+
+		p.getLabelsArray = function() {
+			var a = [],
+				cnt = 0,
+				p;
+			for (p in this._labels) {
+				a[cnt++] = {time:this._labels[p], name:p};
+			}
+			a.sort(function(a,b) {
+				return a.time - b.time;
+			});
+			return a;
+		};
+
+		p.invalidate = function() {
+			this._locked = false; //unlock and set cycle in case invalidate() is called from inside an onRepeat
+			return TimelineLite.prototype.invalidate.call(this);
+		};
+
+
+//---- GETTERS / SETTERS -------------------------------------------------------------------------------------------------------
+
+		p.progress = function(value, suppressEvents) {
+			return (!arguments.length) ? (this._time / this.duration()) || 0 : this.totalTime( this.duration() * ((this._yoyo && (this._cycle & 1) !== 0) ? 1 - value : value) + (this._cycle * (this._duration + this._repeatDelay)), suppressEvents);
+		};
+
+		p.totalProgress = function(value, suppressEvents) {
+			return (!arguments.length) ? (this._totalTime / this.totalDuration()) || 0 : this.totalTime( this.totalDuration() * value, suppressEvents);
+		};
+
+		p.totalDuration = function(value) {
+			if (!arguments.length) {
+				if (this._dirty) {
+					TimelineLite.prototype.totalDuration.call(this); //just forces refresh
+					//Instead of Infinity, we use 999999999999 so that we can accommodate reverses.
+					this._totalDuration = (this._repeat === -1) ? 999999999999 : this._duration * (this._repeat + 1) + (this._repeatDelay * this._repeat);
+				}
+				return this._totalDuration;
+			}
+			return (this._repeat === -1 || !value) ? this : this.timeScale( this.totalDuration() / value );
+		};
+
+		p.time = function(value, suppressEvents) {
+			if (!arguments.length) {
+				return this._time;
+			}
+			if (this._dirty) {
+				this.totalDuration();
+			}
+			if (value > this._duration) {
+				value = this._duration;
+			}
+			if (this._yoyo && (this._cycle & 1) !== 0) {
+				value = (this._duration - value) + (this._cycle * (this._duration + this._repeatDelay));
+			} else if (this._repeat !== 0) {
+				value += this._cycle * (this._duration + this._repeatDelay);
+			}
+			return this.totalTime(value, suppressEvents);
+		};
+
+		p.repeat = function(value) {
+			if (!arguments.length) {
+				return this._repeat;
+			}
+			this._repeat = value;
+			return this._uncache(true);
+		};
+
+		p.repeatDelay = function(value) {
+			if (!arguments.length) {
+				return this._repeatDelay;
+			}
+			this._repeatDelay = value;
+			return this._uncache(true);
+		};
+
+		p.yoyo = function(value) {
+			if (!arguments.length) {
+				return this._yoyo;
+			}
+			this._yoyo = value;
+			return this;
+		};
+
+		p.currentLabel = function(value) {
+			if (!arguments.length) {
+				return this.getLabelBefore(this._time + 0.00000001);
+			}
+			return this.seek(value, true);
+		};
+
+		return TimelineMax;
+
+	}, true);
+	
+
+
+
+
+	
+	
+	
+	
+	
+	
+	
+/*
+ * ----------------------------------------------------------------
+ * BezierPlugin
+ * ----------------------------------------------------------------
+ */
+	(function() {
+
+		var _RAD2DEG = 180 / Math.PI,
+			_r1 = [],
+			_r2 = [],
+			_r3 = [],
+			_corProps = {},
+			_globals = _gsScope._gsDefine.globals,
+			Segment = function(a, b, c, d) {
+				if (c === d) { //if c and d match, the final autoRotate value could lock at -90 degrees, so differentiate them slightly.
+					c = d - (d - b) / 1000000;
+				}
+				if (a === b) { //if a and b match, the starting autoRotate value could lock at -90 degrees, so differentiate them slightly.
+					b = a + (c - a) / 1000000;
+				}
+				this.a = a;
+				this.b = b;
+				this.c = c;
+				this.d = d;
+				this.da = d - a;
+				this.ca = c - a;
+				this.ba = b - a;
+			},
+			_correlate = ",x,y,z,left,top,right,bottom,marginTop,marginLeft,marginRight,marginBottom,paddingLeft,paddingTop,paddingRight,paddingBottom,backgroundPosition,backgroundPosition_y,",
+			cubicToQuadratic = function(a, b, c, d) {
+				var q1 = {a:a},
+					q2 = {},
+					q3 = {},
+					q4 = {c:d},
+					mab = (a + b) / 2,
+					mbc = (b + c) / 2,
+					mcd = (c + d) / 2,
+					mabc = (mab + mbc) / 2,
+					mbcd = (mbc + mcd) / 2,
+					m8 = (mbcd - mabc) / 8;
+				q1.b = mab + (a - mab) / 4;
+				q2.b = mabc + m8;
+				q1.c = q2.a = (q1.b + q2.b) / 2;
+				q2.c = q3.a = (mabc + mbcd) / 2;
+				q3.b = mbcd - m8;
+				q4.b = mcd + (d - mcd) / 4;
+				q3.c = q4.a = (q3.b + q4.b) / 2;
+				return [q1, q2, q3, q4];
+			},
+			_calculateControlPoints = function(a, curviness, quad, basic, correlate) {
+				var l = a.length - 1,
+					ii = 0,
+					cp1 = a[0].a,
+					i, p1, p2, p3, seg, m1, m2, mm, cp2, qb, r1, r2, tl;
+				for (i = 0; i < l; i++) {
+					seg = a[ii];
+					p1 = seg.a;
+					p2 = seg.d;
+					p3 = a[ii+1].d;
+
+					if (correlate) {
+						r1 = _r1[i];
+						r2 = _r2[i];
+						tl = ((r2 + r1) * curviness * 0.25) / (basic ? 0.5 : _r3[i] || 0.5);
+						m1 = p2 - (p2 - p1) * (basic ? curviness * 0.5 : (r1 !== 0 ? tl / r1 : 0));
+						m2 = p2 + (p3 - p2) * (basic ? curviness * 0.5 : (r2 !== 0 ? tl / r2 : 0));
+						mm = p2 - (m1 + (((m2 - m1) * ((r1 * 3 / (r1 + r2)) + 0.5) / 4) || 0));
+					} else {
+						m1 = p2 - (p2 - p1) * curviness * 0.5;
+						m2 = p2 + (p3 - p2) * curviness * 0.5;
+						mm = p2 - (m1 + m2) / 2;
+					}
+					m1 += mm;
+					m2 += mm;
+
+					seg.c = cp2 = m1;
+					if (i !== 0) {
+						seg.b = cp1;
+					} else {
+						seg.b = cp1 = seg.a + (seg.c - seg.a) * 0.6; //instead of placing b on a exactly, we move it inline with c so that if the user specifies an ease like Back.easeIn or Elastic.easeIn which goes BEYOND the beginning, it will do so smoothly.
+					}
+
+					seg.da = p2 - p1;
+					seg.ca = cp2 - p1;
+					seg.ba = cp1 - p1;
+
+					if (quad) {
+						qb = cubicToQuadratic(p1, cp1, cp2, p2);
+						a.splice(ii, 1, qb[0], qb[1], qb[2], qb[3]);
+						ii += 4;
+					} else {
+						ii++;
+					}
+
+					cp1 = m2;
+				}
+				seg = a[ii];
+				seg.b = cp1;
+				seg.c = cp1 + (seg.d - cp1) * 0.4; //instead of placing c on d exactly, we move it inline with b so that if the user specifies an ease like Back.easeOut or Elastic.easeOut which goes BEYOND the end, it will do so smoothly.
+				seg.da = seg.d - seg.a;
+				seg.ca = seg.c - seg.a;
+				seg.ba = cp1 - seg.a;
+				if (quad) {
+					qb = cubicToQuadratic(seg.a, cp1, seg.c, seg.d);
+					a.splice(ii, 1, qb[0], qb[1], qb[2], qb[3]);
+				}
+			},
+			_parseAnchors = function(values, p, correlate, prepend) {
+				var a = [],
+					l, i, p1, p2, p3, tmp;
+				if (prepend) {
+					values = [prepend].concat(values);
+					i = values.length;
+					while (--i > -1) {
+						if (typeof( (tmp = values[i][p]) ) === "string") if (tmp.charAt(1) === "=") {
+							values[i][p] = prepend[p] + Number(tmp.charAt(0) + tmp.substr(2)); //accommodate relative values. Do it inline instead of breaking it out into a function for speed reasons
+						}
+					}
+				}
+				l = values.length - 2;
+				if (l < 0) {
+					a[0] = new Segment(values[0][p], 0, 0, values[0][p]);
+					return a;
+				}
+				for (i = 0; i < l; i++) {
+					p1 = values[i][p];
+					p2 = values[i+1][p];
+					a[i] = new Segment(p1, 0, 0, p2);
+					if (correlate) {
+						p3 = values[i+2][p];
+						_r1[i] = (_r1[i] || 0) + (p2 - p1) * (p2 - p1);
+						_r2[i] = (_r2[i] || 0) + (p3 - p2) * (p3 - p2);
+					}
+				}
+				a[i] = new Segment(values[i][p], 0, 0, values[i+1][p]);
+				return a;
+			},
+			bezierThrough = function(values, curviness, quadratic, basic, correlate, prepend) {
+				var obj = {},
+					props = [],
+					first = prepend || values[0],
+					i, p, a, j, r, l, seamless, last;
+				correlate = (typeof(correlate) === "string") ? ","+correlate+"," : _correlate;
+				if (curviness == null) {
+					curviness = 1;
+				}
+				for (p in values[0]) {
+					props.push(p);
+				}
+				//check to see if the last and first values are identical (well, within 0.05). If so, make seamless by appending the second element to the very end of the values array and the 2nd-to-last element to the very beginning (we'll remove those segments later)
+				if (values.length > 1) {
+					last = values[values.length - 1];
+					seamless = true;
+					i = props.length;
+					while (--i > -1) {
+						p = props[i];
+						if (Math.abs(first[p] - last[p]) > 0.05) { //build in a tolerance of +/-0.05 to accommodate rounding errors.
+							seamless = false;
+							break;
+						}
+					}
+					if (seamless) {
+						values = values.concat(); //duplicate the array to avoid contaminating the original which the user may be reusing for other tweens
+						if (prepend) {
+							values.unshift(prepend);
+						}
+						values.push(values[1]);
+						prepend = values[values.length - 3];
+					}
+				}
+				_r1.length = _r2.length = _r3.length = 0;
+				i = props.length;
+				while (--i > -1) {
+					p = props[i];
+					_corProps[p] = (correlate.indexOf(","+p+",") !== -1);
+					obj[p] = _parseAnchors(values, p, _corProps[p], prepend);
+				}
+				i = _r1.length;
+				while (--i > -1) {
+					_r1[i] = Math.sqrt(_r1[i]);
+					_r2[i] = Math.sqrt(_r2[i]);
+				}
+				if (!basic) {
+					i = props.length;
+					while (--i > -1) {
+						if (_corProps[p]) {
+							a = obj[props[i]];
+							l = a.length - 1;
+							for (j = 0; j < l; j++) {
+								r = (a[j+1].da / _r2[j] + a[j].da / _r1[j]) || 0;
+								_r3[j] = (_r3[j] || 0) + r * r;
+							}
+						}
+					}
+					i = _r3.length;
+					while (--i > -1) {
+						_r3[i] = Math.sqrt(_r3[i]);
+					}
+				}
+				i = props.length;
+				j = quadratic ? 4 : 1;
+				while (--i > -1) {
+					p = props[i];
+					a = obj[p];
+					_calculateControlPoints(a, curviness, quadratic, basic, _corProps[p]); //this method requires that _parseAnchors() and _setSegmentRatios() ran first so that _r1, _r2, and _r3 values are populated for all properties
+					if (seamless) {
+						a.splice(0, j);
+						a.splice(a.length - j, j);
+					}
+				}
+				return obj;
+			},
+			_parseBezierData = function(values, type, prepend) {
+				type = type || "soft";
+				var obj = {},
+					inc = (type === "cubic") ? 3 : 2,
+					soft = (type === "soft"),
+					props = [],
+					a, b, c, d, cur, i, j, l, p, cnt, tmp;
+				if (soft && prepend) {
+					values = [prepend].concat(values);
+				}
+				if (values == null || values.length < inc + 1) { throw "invalid Bezier data"; }
+				for (p in values[0]) {
+					props.push(p);
+				}
+				i = props.length;
+				while (--i > -1) {
+					p = props[i];
+					obj[p] = cur = [];
+					cnt = 0;
+					l = values.length;
+					for (j = 0; j < l; j++) {
+						a = (prepend == null) ? values[j][p] : (typeof( (tmp = values[j][p]) ) === "string" && tmp.charAt(1) === "=") ? prepend[p] + Number(tmp.charAt(0) + tmp.substr(2)) : Number(tmp);
+						if (soft) if (j > 1) if (j < l - 1) {
+							cur[cnt++] = (a + cur[cnt-2]) / 2;
+						}
+						cur[cnt++] = a;
+					}
+					l = cnt - inc + 1;
+					cnt = 0;
+					for (j = 0; j < l; j += inc) {
+						a = cur[j];
+						b = cur[j+1];
+						c = cur[j+2];
+						d = (inc === 2) ? 0 : cur[j+3];
+						cur[cnt++] = tmp = (inc === 3) ? new Segment(a, b, c, d) : new Segment(a, (2 * b + a) / 3, (2 * b + c) / 3, c);
+					}
+					cur.length = cnt;
+				}
+				return obj;
+			},
+			_addCubicLengths = function(a, steps, resolution) {
+				var inc = 1 / resolution,
+					j = a.length,
+					d, d1, s, da, ca, ba, p, i, inv, bez, index;
+				while (--j > -1) {
+					bez = a[j];
+					s = bez.a;
+					da = bez.d - s;
+					ca = bez.c - s;
+					ba = bez.b - s;
+					d = d1 = 0;
+					for (i = 1; i <= resolution; i++) {
+						p = inc * i;
+						inv = 1 - p;
+						d = d1 - (d1 = (p * p * da + 3 * inv * (p * ca + inv * ba)) * p);
+						index = j * resolution + i - 1;
+						steps[index] = (steps[index] || 0) + d * d;
+					}
+				}
+			},
+			_parseLengthData = function(obj, resolution) {
+				resolution = resolution >> 0 || 6;
+				var a = [],
+					lengths = [],
+					d = 0,
+					total = 0,
+					threshold = resolution - 1,
+					segments = [],
+					curLS = [], //current length segments array
+					p, i, l, index;
+				for (p in obj) {
+					_addCubicLengths(obj[p], a, resolution);
+				}
+				l = a.length;
+				for (i = 0; i < l; i++) {
+					d += Math.sqrt(a[i]);
+					index = i % resolution;
+					curLS[index] = d;
+					if (index === threshold) {
+						total += d;
+						index = (i / resolution) >> 0;
+						segments[index] = curLS;
+						lengths[index] = total;
+						d = 0;
+						curLS = [];
+					}
+				}
+				return {length:total, lengths:lengths, segments:segments};
+			},
+
+
+
+			BezierPlugin = _gsScope._gsDefine.plugin({
+					propName: "bezier",
+					priority: -1,
+					version: "1.3.8",
+					API: 2,
+					global:true,
+
+					//gets called when the tween renders for the first time. This is where initial values should be recorded and any setup routines should run.
+					init: function(target, vars, tween) {
+						this._target = target;
+						if (vars instanceof Array) {
+							vars = {values:vars};
+						}
+						this._func = {};
+						this._mod = {};
+						this._props = [];
+						this._timeRes = (vars.timeResolution == null) ? 6 : parseInt(vars.timeResolution, 10);
+						var values = vars.values || [],
+							first = {},
+							second = values[0],
+							autoRotate = vars.autoRotate || tween.vars.orientToBezier,
+							p, isFunc, i, j, prepend;
+
+						this._autoRotate = autoRotate ? (autoRotate instanceof Array) ? autoRotate : [["x","y","rotation",((autoRotate === true) ? 0 : Number(autoRotate) || 0)]] : null;
+						for (p in second) {
+							this._props.push(p);
+						}
+
+						i = this._props.length;
+						while (--i > -1) {
+							p = this._props[i];
+
+							this._overwriteProps.push(p);
+							isFunc = this._func[p] = (typeof(target[p]) === "function");
+							first[p] = (!isFunc) ? parseFloat(target[p]) : target[ ((p.indexOf("set") || typeof(target["get" + p.substr(3)]) !== "function") ? p : "get" + p.substr(3)) ]();
+							if (!prepend) if (first[p] !== values[0][p]) {
+								prepend = first;
+							}
+						}
+						this._beziers = (vars.type !== "cubic" && vars.type !== "quadratic" && vars.type !== "soft") ? bezierThrough(values, isNaN(vars.curviness) ? 1 : vars.curviness, false, (vars.type === "thruBasic"), vars.correlate, prepend) : _parseBezierData(values, vars.type, first);
+						this._segCount = this._beziers[p].length;
+
+						if (this._timeRes) {
+							var ld = _parseLengthData(this._beziers, this._timeRes);
+							this._length = ld.length;
+							this._lengths = ld.lengths;
+							this._segments = ld.segments;
+							this._l1 = this._li = this._s1 = this._si = 0;
+							this._l2 = this._lengths[0];
+							this._curSeg = this._segments[0];
+							this._s2 = this._curSeg[0];
+							this._prec = 1 / this._curSeg.length;
+						}
+
+						if ((autoRotate = this._autoRotate)) {
+							this._initialRotations = [];
+							if (!(autoRotate[0] instanceof Array)) {
+								this._autoRotate = autoRotate = [autoRotate];
+							}
+							i = autoRotate.length;
+							while (--i > -1) {
+								for (j = 0; j < 3; j++) {
+									p = autoRotate[i][j];
+									this._func[p] = (typeof(target[p]) === "function") ? target[ ((p.indexOf("set") || typeof(target["get" + p.substr(3)]) !== "function") ? p : "get" + p.substr(3)) ] : false;
+								}
+								p = autoRotate[i][2];
+								this._initialRotations[i] = (this._func[p] ? this._func[p].call(this._target) : this._target[p]) || 0;
+								this._overwriteProps.push(p);
+							}
+						}
+						this._startRatio = tween.vars.runBackwards ? 1 : 0; //we determine the starting ratio when the tween inits which is always 0 unless the tween has runBackwards:true (indicating it's a from() tween) in which case it's 1.
+						return true;
+					},
+
+					//called each time the values should be updated, and the ratio gets passed as the only parameter (typically it's a value between 0 and 1, but it can exceed those when using an ease like Elastic.easeOut or Back.easeOut, etc.)
+					set: function(v) {
+						var segments = this._segCount,
+							func = this._func,
+							target = this._target,
+							notStart = (v !== this._startRatio),
+							curIndex, inv, i, p, b, t, val, l, lengths, curSeg;
+						if (!this._timeRes) {
+							curIndex = (v < 0) ? 0 : (v >= 1) ? segments - 1 : (segments * v) >> 0;
+							t = (v - (curIndex * (1 / segments))) * segments;
+						} else {
+							lengths = this._lengths;
+							curSeg = this._curSeg;
+							v *= this._length;
+							i = this._li;
+							//find the appropriate segment (if the currently cached one isn't correct)
+							if (v > this._l2 && i < segments - 1) {
+								l = segments - 1;
+								while (i < l && (this._l2 = lengths[++i]) <= v) {	}
+								this._l1 = lengths[i-1];
+								this._li = i;
+								this._curSeg = curSeg = this._segments[i];
+								this._s2 = curSeg[(this._s1 = this._si = 0)];
+							} else if (v < this._l1 && i > 0) {
+								while (i > 0 && (this._l1 = lengths[--i]) >= v) { }
+								if (i === 0 && v < this._l1) {
+									this._l1 = 0;
+								} else {
+									i++;
+								}
+								this._l2 = lengths[i];
+								this._li = i;
+								this._curSeg = curSeg = this._segments[i];
+								this._s1 = curSeg[(this._si = curSeg.length - 1) - 1] || 0;
+								this._s2 = curSeg[this._si];
+							}
+							curIndex = i;
+							//now find the appropriate sub-segment (we split it into the number of pieces that was defined by "precision" and measured each one)
+							v -= this._l1;
+							i = this._si;
+							if (v > this._s2 && i < curSeg.length - 1) {
+								l = curSeg.length - 1;
+								while (i < l && (this._s2 = curSeg[++i]) <= v) {	}
+								this._s1 = curSeg[i-1];
+								this._si = i;
+							} else if (v < this._s1 && i > 0) {
+								while (i > 0 && (this._s1 = curSeg[--i]) >= v) {	}
+								if (i === 0 && v < this._s1) {
+									this._s1 = 0;
+								} else {
+									i++;
+								}
+								this._s2 = curSeg[i];
+								this._si = i;
+							}
+							t = ((i + (v - this._s1) / (this._s2 - this._s1)) * this._prec) || 0;
+						}
+						inv = 1 - t;
+
+						i = this._props.length;
+						while (--i > -1) {
+							p = this._props[i];
+							b = this._beziers[p][curIndex];
+							val = (t * t * b.da + 3 * inv * (t * b.ca + inv * b.ba)) * t + b.a;
+							if (this._mod[p]) {
+								val = this._mod[p](val, target);
+							}
+							if (func[p]) {
+								target[p](val);
+							} else {
+								target[p] = val;
+							}
+						}
+
+						if (this._autoRotate) {
+							var ar = this._autoRotate,
+								b2, x1, y1, x2, y2, add, conv;
+							i = ar.length;
+							while (--i > -1) {
+								p = ar[i][2];
+								add = ar[i][3] || 0;
+								conv = (ar[i][4] === true) ? 1 : _RAD2DEG;
+								b = this._beziers[ar[i][0]];
+								b2 = this._beziers[ar[i][1]];
+
+								if (b && b2) { //in case one of the properties got overwritten.
+									b = b[curIndex];
+									b2 = b2[curIndex];
+
+									x1 = b.a + (b.b - b.a) * t;
+									x2 = b.b + (b.c - b.b) * t;
+									x1 += (x2 - x1) * t;
+									x2 += ((b.c + (b.d - b.c) * t) - x2) * t;
+
+									y1 = b2.a + (b2.b - b2.a) * t;
+									y2 = b2.b + (b2.c - b2.b) * t;
+									y1 += (y2 - y1) * t;
+									y2 += ((b2.c + (b2.d - b2.c) * t) - y2) * t;
+
+									val = notStart ? Math.atan2(y2 - y1, x2 - x1) * conv + add : this._initialRotations[i];
+
+									if (this._mod[p]) {
+										val = this._mod[p](val, target); //for modProps
+									}
+
+									if (func[p]) {
+										target[p](val);
+									} else {
+										target[p] = val;
+									}
+								}
+							}
+						}
+					}
+			}),
+			p = BezierPlugin.prototype;
+
+
+		BezierPlugin.bezierThrough = bezierThrough;
+		BezierPlugin.cubicToQuadratic = cubicToQuadratic;
+		BezierPlugin._autoCSS = true; //indicates that this plugin can be inserted into the "css" object using the autoCSS feature of TweenLite
+		BezierPlugin.quadraticToCubic = function(a, b, c) {
+			return new Segment(a, (2 * b + a) / 3, (2 * b + c) / 3, c);
+		};
+
+		BezierPlugin._cssRegister = function() {
+			var CSSPlugin = _globals.CSSPlugin;
+			if (!CSSPlugin) {
+				return;
+			}
+			var _internals = CSSPlugin._internals,
+				_parseToProxy = _internals._parseToProxy,
+				_setPluginRatio = _internals._setPluginRatio,
+				CSSPropTween = _internals.CSSPropTween;
+			_internals._registerComplexSpecialProp("bezier", {parser:function(t, e, prop, cssp, pt, plugin) {
+				if (e instanceof Array) {
+					e = {values:e};
+				}
+				plugin = new BezierPlugin();
+				var values = e.values,
+					l = values.length - 1,
+					pluginValues = [],
+					v = {},
+					i, p, data;
+				if (l < 0) {
+					return pt;
+				}
+				for (i = 0; i <= l; i++) {
+					data = _parseToProxy(t, values[i], cssp, pt, plugin, (l !== i));
+					pluginValues[i] = data.end;
+				}
+				for (p in e) {
+					v[p] = e[p]; //duplicate the vars object because we need to alter some things which would cause problems if the user plans to reuse the same vars object for another tween.
+				}
+				v.values = pluginValues;
+				pt = new CSSPropTween(t, "bezier", 0, 0, data.pt, 2);
+				pt.data = data;
+				pt.plugin = plugin;
+				pt.setRatio = _setPluginRatio;
+				if (v.autoRotate === 0) {
+					v.autoRotate = true;
+				}
+				if (v.autoRotate && !(v.autoRotate instanceof Array)) {
+					i = (v.autoRotate === true) ? 0 : Number(v.autoRotate);
+					v.autoRotate = (data.end.left != null) ? [["left","top","rotation",i,false]] : (data.end.x != null) ? [["x","y","rotation",i,false]] : false;
+				}
+				if (v.autoRotate) {
+					if (!cssp._transform) {
+						cssp._enableTransforms(false);
+					}
+					data.autoRotate = cssp._target._gsTransform;
+					data.proxy.rotation = data.autoRotate.rotation || 0;
+					cssp._overwriteProps.push("rotation");
+				}
+				plugin._onInitTween(data.proxy, v, cssp._tween);
+				return pt;
+			}});
+		};
+
+		p._mod = function(lookup) {
+			var op = this._overwriteProps,
+				i = op.length,
+				val;
+			while (--i > -1) {
+				val = lookup[op[i]];
+				if (val && typeof(val) === "function") {
+					this._mod[op[i]] = val;
+				}
+			}
+		};
+
+		p._kill = function(lookup) {
+			var a = this._props,
+				p, i;
+			for (p in this._beziers) {
+				if (p in lookup) {
+					delete this._beziers[p];
+					delete this._func[p];
+					i = a.length;
+					while (--i > -1) {
+						if (a[i] === p) {
+							a.splice(i, 1);
+						}
+					}
+				}
+			}
+			a = this._autoRotate;
+			if (a) {
+				i = a.length;
+				while (--i > -1) {
+					if (lookup[a[i][2]]) {
+						a.splice(i, 1);
+					}
+				}
+			}
+			return this._super._kill.call(this, lookup);
+		};
+
+	}());
+
+
+
+
+
+
+	
+	
+	
+	
+	
+	
+	
+	
+/*
+ * ----------------------------------------------------------------
+ * CSSPlugin
+ * ----------------------------------------------------------------
+ */
+	_gsScope._gsDefine("plugins.CSSPlugin", ["plugins.TweenPlugin","TweenLite"], function(TweenPlugin, TweenLite) {
+
+		/** @constructor **/
+		var CSSPlugin = function() {
+				TweenPlugin.call(this, "css");
+				this._overwriteProps.length = 0;
+				this.setRatio = CSSPlugin.prototype.setRatio; //speed optimization (avoid prototype lookup on this "hot" method)
+			},
+			_globals = _gsScope._gsDefine.globals,
+			_hasPriority, //turns true whenever a CSSPropTween instance is created that has a priority other than 0. This helps us discern whether or not we should spend the time organizing the linked list or not after a CSSPlugin's _onInitTween() method is called.
+			_suffixMap, //we set this in _onInitTween() each time as a way to have a persistent variable we can use in other methods like _parse() without having to pass it around as a parameter and we keep _parse() decoupled from a particular CSSPlugin instance
+			_cs, //computed style (we store this in a shared variable to conserve memory and make minification tighter
+			_overwriteProps, //alias to the currently instantiating CSSPlugin's _overwriteProps array. We use this closure in order to avoid having to pass a reference around from method to method and aid in minification.
+			_specialProps = {},
+			p = CSSPlugin.prototype = new TweenPlugin("css");
+
+		p.constructor = CSSPlugin;
+		CSSPlugin.version = "1.20.0";
+		CSSPlugin.API = 2;
+		CSSPlugin.defaultTransformPerspective = 0;
+		CSSPlugin.defaultSkewType = "compensated";
+		CSSPlugin.defaultSmoothOrigin = true;
+		p = "px"; //we'll reuse the "p" variable to keep file size down
+		CSSPlugin.suffixMap = {top:p, right:p, bottom:p, left:p, width:p, height:p, fontSize:p, padding:p, margin:p, perspective:p, lineHeight:""};
+
+
+		var _numExp = /(?:\-|\.|\b)(\d|\.|e\-)+/g,
+			_relNumExp = /(?:\d|\-\d|\.\d|\-\.\d|\+=\d|\-=\d|\+=.\d|\-=\.\d)+/g,
+			_valuesExp = /(?:\+=|\-=|\-|\b)[\d\-\.]+[a-zA-Z0-9]*(?:%|\b)/gi, //finds all the values that begin with numbers or += or -= and then a number. Includes suffixes. We use this to split complex values apart like "1px 5px 20px rgb(255,102,51)"
+			_NaNExp = /(?![+-]?\d*\.?\d+|[+-]|e[+-]\d+)[^0-9]/g, //also allows scientific notation and doesn't kill the leading -/+ in -= and +=
+			_suffixExp = /(?:\d|\-|\+|=|#|\.)*/g,
+			_opacityExp = /opacity *= *([^)]*)/i,
+			_opacityValExp = /opacity:([^;]*)/i,
+			_alphaFilterExp = /alpha\(opacity *=.+?\)/i,
+			_rgbhslExp = /^(rgb|hsl)/,
+			_capsExp = /([A-Z])/g,
+			_camelExp = /-([a-z])/gi,
+			_urlExp = /(^(?:url\(\"|url\())|(?:(\"\))$|\)$)/gi, //for pulling out urls from url(...) or url("...") strings (some browsers wrap urls in quotes, some don't when reporting things like backgroundImage)
+			_camelFunc = function(s, g) { return g.toUpperCase(); },
+			_horizExp = /(?:Left|Right|Width)/i,
+			_ieGetMatrixExp = /(M11|M12|M21|M22)=[\d\-\.e]+/gi,
+			_ieSetMatrixExp = /progid\:DXImageTransform\.Microsoft\.Matrix\(.+?\)/i,
+			_commasOutsideParenExp = /,(?=[^\)]*(?:\(|$))/gi, //finds any commas that are not within parenthesis
+			_complexExp = /[\s,\(]/i, //for testing a string to find if it has a space, comma, or open parenthesis (clues that it's a complex value)
+			_DEG2RAD = Math.PI / 180,
+			_RAD2DEG = 180 / Math.PI,
+			_forcePT = {},
+			_dummyElement = {style:{}},
+			_doc = _gsScope.document || {createElement: function() {return _dummyElement;}},
+			_createElement = function(type, ns) {
+				return _doc.createElementNS ? _doc.createElementNS(ns || "http://www.w3.org/1999/xhtml", type) : _doc.createElement(type);
+			},
+			_tempDiv = _createElement("div"),
+			_tempImg = _createElement("img"),
+			_internals = CSSPlugin._internals = {_specialProps:_specialProps}, //provides a hook to a few internal methods that we need to access from inside other plugins
+			_agent = (_gsScope.navigator || {}).userAgent || "",
+			_autoRound,
+			_reqSafariFix, //we won't apply the Safari transform fix until we actually come across a tween that affects a transform property (to maintain best performance).
+
+			_isSafari,
+			_isFirefox, //Firefox has a bug that causes 3D transformed elements to randomly disappear unless a repaint is forced after each update on each element.
+			_isSafariLT6, //Safari (and Android 4 which uses a flavor of Safari) has a bug that prevents changes to "top" and "left" properties from rendering properly if changed on the same frame as a transform UNLESS we set the element's WebkitBackfaceVisibility to hidden (weird, I know). Doing this for Android 3 and earlier seems to actually cause other problems, though (fun!)
+			_ieVers,
+			_supportsOpacity = (function() { //we set _isSafari, _ieVers, _isFirefox, and _supportsOpacity all in one function here to reduce file size slightly, especially in the minified version.
+				var i = _agent.indexOf("Android"),
+					a = _createElement("a");
+				_isSafari = (_agent.indexOf("Safari") !== -1 && _agent.indexOf("Chrome") === -1 && (i === -1 || parseFloat(_agent.substr(i+8, 2)) > 3));
+				_isSafariLT6 = (_isSafari && (parseFloat(_agent.substr(_agent.indexOf("Version/")+8, 2)) < 6));
+				_isFirefox = (_agent.indexOf("Firefox") !== -1);
+				if ((/MSIE ([0-9]{1,}[\.0-9]{0,})/).exec(_agent) || (/Trident\/.*rv:([0-9]{1,}[\.0-9]{0,})/).exec(_agent)) {
+					_ieVers = parseFloat( RegExp.$1 );
+				}
+				if (!a) {
+					return false;
+				}
+				a.style.cssText = "top:1px;opacity:.55;";
+				return /^0.55/.test(a.style.opacity);
+			}()),
+			_getIEOpacity = function(v) {
+				return (_opacityExp.test( ((typeof(v) === "string") ? v : (v.currentStyle ? v.currentStyle.filter : v.style.filter) || "") ) ? ( parseFloat( RegExp.$1 ) / 100 ) : 1);
+			},
+			_log = function(s) {//for logging messages, but in a way that won't throw errors in old versions of IE.
+				if (_gsScope.console) {
+					console.log(s);
+				}
+			},
+			_target, //when initting a CSSPlugin, we set this variable so that we can access it from within many other functions without having to pass it around as params
+			_index, //when initting a CSSPlugin, we set this variable so that we can access it from within many other functions without having to pass it around as params
+
+			_prefixCSS = "", //the non-camelCase vendor prefix like "-o-", "-moz-", "-ms-", or "-webkit-"
+			_prefix = "", //camelCase vendor prefix like "O", "ms", "Webkit", or "Moz".
+
+			// @private feed in a camelCase property name like "transform" and it will check to see if it is valid as-is or if it needs a vendor prefix. It returns the corrected camelCase property name (i.e. "WebkitTransform" or "MozTransform" or "transform" or null if no such property is found, like if the browser is IE8 or before, "transform" won't be found at all)
+			_checkPropPrefix = function(p, e) {
+				e = e || _tempDiv;
+				var s = e.style,
+					a, i;
+				if (s[p] !== undefined) {
+					return p;
+				}
+				p = p.charAt(0).toUpperCase() + p.substr(1);
+				a = ["O","Moz","ms","Ms","Webkit"];
+				i = 5;
+				while (--i > -1 && s[a[i]+p] === undefined) { }
+				if (i >= 0) {
+					_prefix = (i === 3) ? "ms" : a[i];
+					_prefixCSS = "-" + _prefix.toLowerCase() + "-";
+					return _prefix + p;
+				}
+				return null;
+			},
+
+			_getComputedStyle = _doc.defaultView ? _doc.defaultView.getComputedStyle : function() {},
+
+			/**
+			 * @private Returns the css style for a particular property of an element. For example, to get whatever the current "left" css value for an element with an ID of "myElement", you could do:
+			 * var currentLeft = CSSPlugin.getStyle( document.getElementById("myElement"), "left");
+			 *
+			 * @param {!Object} t Target element whose style property you want to query
+			 * @param {!string} p Property name (like "left" or "top" or "marginTop", etc.)
+			 * @param {Object=} cs Computed style object. This just provides a way to speed processing if you're going to get several properties on the same element in quick succession - you can reuse the result of the getComputedStyle() call.
+			 * @param {boolean=} calc If true, the value will not be read directly from the element's "style" property (if it exists there), but instead the getComputedStyle() result will be used. This can be useful when you want to ensure that the browser itself is interpreting the value.
+			 * @param {string=} dflt Default value that should be returned in the place of null, "none", "auto" or "auto auto".
+			 * @return {?string} The current property value
+			 */
+			_getStyle = CSSPlugin.getStyle = function(t, p, cs, calc, dflt) {
+				var rv;
+				if (!_supportsOpacity) if (p === "opacity") { //several versions of IE don't use the standard "opacity" property - they use things like filter:alpha(opacity=50), so we parse that here.
+					return _getIEOpacity(t);
+				}
+				if (!calc && t.style[p]) {
+					rv = t.style[p];
+				} else if ((cs = cs || _getComputedStyle(t))) {
+					rv = cs[p] || cs.getPropertyValue(p) || cs.getPropertyValue(p.replace(_capsExp, "-$1").toLowerCase());
+				} else if (t.currentStyle) {
+					rv = t.currentStyle[p];
+				}
+				return (dflt != null && (!rv || rv === "none" || rv === "auto" || rv === "auto auto")) ? dflt : rv;
+			},
+
+			/**
+			 * @private Pass the target element, the property name, the numeric value, and the suffix (like "%", "em", "px", etc.) and it will spit back the equivalent pixel number.
+			 * @param {!Object} t Target element
+			 * @param {!string} p Property name (like "left", "top", "marginLeft", etc.)
+			 * @param {!number} v Value
+			 * @param {string=} sfx Suffix (like "px" or "%" or "em")
+			 * @param {boolean=} recurse If true, the call is a recursive one. In some browsers (like IE7/8), occasionally the value isn't accurately reported initially, but if we run the function again it will take effect.
+			 * @return {number} value in pixels
+			 */
+			_convertToPixels = _internals.convertToPixels = function(t, p, v, sfx, recurse) {
+				if (sfx === "px" || (!sfx && p !== "lineHeight")) { return v; }
+				if (sfx === "auto" || !v) { return 0; }
+				var horiz = _horizExp.test(p),
+					node = t,
+					style = _tempDiv.style,
+					neg = (v < 0),
+					precise = (v === 1),
+					pix, cache, time;
+				if (neg) {
+					v = -v;
+				}
+				if (precise) {
+					v *= 100;
+				}
+				if (p === "lineHeight" && !sfx) { //special case of when a simple lineHeight (without a unit) is used. Set it to the value, read back the computed value, and then revert.
+					cache = _getComputedStyle(t).lineHeight;
+					t.style.lineHeight = v;
+					pix = parseFloat(_getComputedStyle(t).lineHeight);
+					t.style.lineHeight = cache;
+				} else if (sfx === "%" && p.indexOf("border") !== -1) {
+					pix = (v / 100) * (horiz ? t.clientWidth : t.clientHeight);
+				} else {
+					style.cssText = "border:0 solid red;position:" + _getStyle(t, "position") + ";line-height:0;";
+					if (sfx === "%" || !node.appendChild || sfx.charAt(0) === "v" || sfx === "rem") {
+						node = t.parentNode || _doc.body;
+						if (_getStyle(node, "display").indexOf("flex") !== -1) { //Edge and IE11 have a bug that causes offsetWidth to report as 0 if the container has display:flex and the child is position:relative. Switching to position: absolute solves it.
+							style.position = "absolute";
+						}
+						cache = node._gsCache;
+						time = TweenLite.ticker.frame;
+						if (cache && horiz && cache.time === time) { //performance optimization: we record the width of elements along with the ticker frame so that we can quickly get it again on the same tick (seems relatively safe to assume it wouldn't change on the same tick)
+							return cache.width * v / 100;
+						}
+						style[(horiz ? "width" : "height")] = v + sfx;
+					} else {
+						style[(horiz ? "borderLeftWidth" : "borderTopWidth")] = v + sfx;
+					}
+					node.appendChild(_tempDiv);
+					pix = parseFloat(_tempDiv[(horiz ? "offsetWidth" : "offsetHeight")]);
+					node.removeChild(_tempDiv);
+					if (horiz && sfx === "%" && CSSPlugin.cacheWidths !== false) {
+						cache = node._gsCache = node._gsCache || {};
+						cache.time = time;
+						cache.width = pix / v * 100;
+					}
+					if (pix === 0 && !recurse) {
+						pix = _convertToPixels(t, p, v, sfx, true);
+					}
+				}
+				if (precise) {
+					pix /= 100;
+				}
+				return neg ? -pix : pix;
+			},
+			_calculateOffset = _internals.calculateOffset = function(t, p, cs) { //for figuring out "top" or "left" in px when it's "auto". We need to factor in margin with the offsetLeft/offsetTop
+				if (_getStyle(t, "position", cs) !== "absolute") { return 0; }
+				var dim = ((p === "left") ? "Left" : "Top"),
+					v = _getStyle(t, "margin" + dim, cs);
+				return t["offset" + dim] - (_convertToPixels(t, p, parseFloat(v), v.replace(_suffixExp, "")) || 0);
+			},
+
+			// @private returns at object containing ALL of the style properties in camelCase and their associated values.
+			_getAllStyles = function(t, cs) {
+				var s = {},
+					i, tr, p;
+				if ((cs = cs || _getComputedStyle(t, null))) {
+					if ((i = cs.length)) {
+						while (--i > -1) {
+							p = cs[i];
+							if (p.indexOf("-transform") === -1 || _transformPropCSS === p) { //Some webkit browsers duplicate transform values, one non-prefixed and one prefixed ("transform" and "WebkitTransform"), so we must weed out the extra one here.
+								s[p.replace(_camelExp, _camelFunc)] = cs.getPropertyValue(p);
+							}
+						}
+					} else { //some browsers behave differently - cs.length is always 0, so we must do a for...in loop.
+						for (i in cs) {
+							if (i.indexOf("Transform") === -1 || _transformProp === i) { //Some webkit browsers duplicate transform values, one non-prefixed and one prefixed ("transform" and "WebkitTransform"), so we must weed out the extra one here.
+								s[i] = cs[i];
+							}
+						}
+					}
+				} else if ((cs = t.currentStyle || t.style)) {
+					for (i in cs) {
+						if (typeof(i) === "string" && s[i] === undefined) {
+							s[i.replace(_camelExp, _camelFunc)] = cs[i];
+						}
+					}
+				}
+				if (!_supportsOpacity) {
+					s.opacity = _getIEOpacity(t);
+				}
+				tr = _getTransform(t, cs, false);
+				s.rotation = tr.rotation;
+				s.skewX = tr.skewX;
+				s.scaleX = tr.scaleX;
+				s.scaleY = tr.scaleY;
+				s.x = tr.x;
+				s.y = tr.y;
+				if (_supports3D) {
+					s.z = tr.z;
+					s.rotationX = tr.rotationX;
+					s.rotationY = tr.rotationY;
+					s.scaleZ = tr.scaleZ;
+				}
+				if (s.filters) {
+					delete s.filters;
+				}
+				return s;
+			},
+
+			// @private analyzes two style objects (as returned by _getAllStyles()) and only looks for differences between them that contain tweenable values (like a number or color). It returns an object with a "difs" property which refers to an object containing only those isolated properties and values for tweening, and a "firstMPT" property which refers to the first MiniPropTween instance in a linked list that recorded all the starting values of the different properties so that we can revert to them at the end or beginning of the tween - we don't want the cascading to get messed up. The forceLookup parameter is an optional generic object with properties that should be forced into the results - this is necessary for className tweens that are overwriting others because imagine a scenario where a rollover/rollout adds/removes a class and the user swipes the mouse over the target SUPER fast, thus nothing actually changed yet and the subsequent comparison of the properties would indicate they match (especially when px rounding is taken into consideration), thus no tweening is necessary even though it SHOULD tween and remove those properties after the tween (otherwise the inline styles will contaminate things). See the className SpecialProp code for details.
+			_cssDif = function(t, s1, s2, vars, forceLookup) {
+				var difs = {},
+					style = t.style,
+					val, p, mpt;
+				for (p in s2) {
+					if (p !== "cssText") if (p !== "length") if (isNaN(p)) if (s1[p] !== (val = s2[p]) || (forceLookup && forceLookup[p])) if (p.indexOf("Origin") === -1) if (typeof(val) === "number" || typeof(val) === "string") {
+						difs[p] = (val === "auto" && (p === "left" || p === "top")) ? _calculateOffset(t, p) : ((val === "" || val === "auto" || val === "none") && typeof(s1[p]) === "string" && s1[p].replace(_NaNExp, "") !== "") ? 0 : val; //if the ending value is defaulting ("" or "auto"), we check the starting value and if it can be parsed into a number (a string which could have a suffix too, like 700px), then we swap in 0 for "" or "auto" so that things actually tween.
+						if (style[p] !== undefined) { //for className tweens, we must remember which properties already existed inline - the ones that didn't should be removed when the tween isn't in progress because they were only introduced to facilitate the transition between classes.
+							mpt = new MiniPropTween(style, p, style[p], mpt);
+						}
+					}
+				}
+				if (vars) {
+					for (p in vars) { //copy properties (except className)
+						if (p !== "className") {
+							difs[p] = vars[p];
+						}
+					}
+				}
+				return {difs:difs, firstMPT:mpt};
+			},
+			_dimensions = {width:["Left","Right"], height:["Top","Bottom"]},
+			_margins = ["marginLeft","marginRight","marginTop","marginBottom"],
+
+			/**
+			 * @private Gets the width or height of an element
+			 * @param {!Object} t Target element
+			 * @param {!string} p Property name ("width" or "height")
+			 * @param {Object=} cs Computed style object (if one exists). Just a speed optimization.
+			 * @return {number} Dimension (in pixels)
+			 */
+			_getDimension = function(t, p, cs) {
+				if ((t.nodeName + "").toLowerCase() === "svg") { //Chrome no longer supports offsetWidth/offsetHeight on SVG elements.
+					return (cs || _getComputedStyle(t))[p] || 0;
+				} else if (t.getCTM && _isSVG(t)) {
+					return t.getBBox()[p] || 0;
+				}
+				var v = parseFloat((p === "width") ? t.offsetWidth : t.offsetHeight),
+					a = _dimensions[p],
+					i = a.length;
+				cs = cs || _getComputedStyle(t, null);
+				while (--i > -1) {
+					v -= parseFloat( _getStyle(t, "padding" + a[i], cs, true) ) || 0;
+					v -= parseFloat( _getStyle(t, "border" + a[i] + "Width", cs, true) ) || 0;
+				}
+				return v;
+			},
+
+			// @private Parses position-related complex strings like "top left" or "50px 10px" or "70% 20%", etc. which are used for things like transformOrigin or backgroundPosition. Optionally decorates a supplied object (recObj) with the following properties: "ox" (offsetX), "oy" (offsetY), "oxp" (if true, "ox" is a percentage not a pixel value), and "oxy" (if true, "oy" is a percentage not a pixel value)
+			_parsePosition = function(v, recObj) {
+				if (v === "contain" || v === "auto" || v === "auto auto") { //note: Firefox uses "auto auto" as default whereas Chrome uses "auto".
+					return v + " ";
+				}
+				if (v == null || v === "") {
+					v = "0 0";
+				}
+				var a = v.split(" "),
+					x = (v.indexOf("left") !== -1) ? "0%" : (v.indexOf("right") !== -1) ? "100%" : a[0],
+					y = (v.indexOf("top") !== -1) ? "0%" : (v.indexOf("bottom") !== -1) ? "100%" : a[1],
+					i;
+				if (a.length > 3 && !recObj) { //multiple positions
+					a = v.split(", ").join(",").split(",");
+					v = [];
+					for (i = 0; i < a.length; i++) {
+						v.push(_parsePosition(a[i]));
+					}
+					return v.join(",");
+				}
+				if (y == null) {
+					y = (x === "center") ? "50%" : "0";
+				} else if (y === "center") {
+					y = "50%";
+				}
+				if (x === "center" || (isNaN(parseFloat(x)) && (x + "").indexOf("=") === -1)) { //remember, the user could flip-flop the values and say "bottom center" or "center bottom", etc. "center" is ambiguous because it could be used to describe horizontal or vertical, hence the isNaN(). If there's an "=" sign in the value, it's relative.
+					x = "50%";
+				}
+				v = x + " " + y + ((a.length > 2) ? " " + a[2] : "");
+				if (recObj) {
+					recObj.oxp = (x.indexOf("%") !== -1);
+					recObj.oyp = (y.indexOf("%") !== -1);
+					recObj.oxr = (x.charAt(1) === "=");
+					recObj.oyr = (y.charAt(1) === "=");
+					recObj.ox = parseFloat(x.replace(_NaNExp, ""));
+					recObj.oy = parseFloat(y.replace(_NaNExp, ""));
+					recObj.v = v;
+				}
+				return recObj || v;
+			},
+
+			/**
+			 * @private Takes an ending value (typically a string, but can be a number) and a starting value and returns the change between the two, looking for relative value indicators like += and -= and it also ignores suffixes (but make sure the ending value starts with a number or +=/-= and that the starting value is a NUMBER!)
+			 * @param {(number|string)} e End value which is typically a string, but could be a number
+			 * @param {(number|string)} b Beginning value which is typically a string but could be a number
+			 * @return {number} Amount of change between the beginning and ending values (relative values that have a "+=" or "-=" are recognized)
+			 */
+			_parseChange = function(e, b) {
+				if (typeof(e) === "function") {
+					e = e(_index, _target);
+				}
+				return (typeof(e) === "string" && e.charAt(1) === "=") ? parseInt(e.charAt(0) + "1", 10) * parseFloat(e.substr(2)) : (parseFloat(e) - parseFloat(b)) || 0;
+			},
+
+			/**
+			 * @private Takes a value and a default number, checks if the value is relative, null, or numeric and spits back a normalized number accordingly. Primarily used in the _parseTransform() function.
+			 * @param {Object} v Value to be parsed
+			 * @param {!number} d Default value (which is also used for relative calculations if "+=" or "-=" is found in the first parameter)
+			 * @return {number} Parsed value
+			 */
+			_parseVal = function(v, d) {
+				if (typeof(v) === "function") {
+					v = v(_index, _target);
+				}
+				return (v == null) ? d : (typeof(v) === "string" && v.charAt(1) === "=") ? parseInt(v.charAt(0) + "1", 10) * parseFloat(v.substr(2)) + d : parseFloat(v) || 0;
+			},
+
+			/**
+			 * @private Translates strings like "40deg" or "40" or 40rad" or "+=40deg" or "270_short" or "-90_cw" or "+=45_ccw" to a numeric radian angle. Of course a starting/default value must be fed in too so that relative values can be calculated properly.
+			 * @param {Object} v Value to be parsed
+			 * @param {!number} d Default value (which is also used for relative calculations if "+=" or "-=" is found in the first parameter)
+			 * @param {string=} p property name for directionalEnd (optional - only used when the parsed value is directional ("_short", "_cw", or "_ccw" suffix). We need a way to store the uncompensated value so that at the end of the tween, we set it to exactly what was requested with no directional compensation). Property name would be "rotation", "rotationX", or "rotationY"
+			 * @param {Object=} directionalEnd An object that will store the raw end values for directional angles ("_short", "_cw", or "_ccw" suffix). We need a way to store the uncompensated value so that at the end of the tween, we set it to exactly what was requested with no directional compensation.
+			 * @return {number} parsed angle in radians
+			 */
+			_parseAngle = function(v, d, p, directionalEnd) {
+				var min = 0.000001,
+					cap, split, dif, result, isRelative;
+				if (typeof(v) === "function") {
+					v = v(_index, _target);
+				}
+				if (v == null) {
+					result = d;
+				} else if (typeof(v) === "number") {
+					result = v;
+				} else {
+					cap = 360;
+					split = v.split("_");
+					isRelative = (v.charAt(1) === "=");
+					dif = (isRelative ? parseInt(v.charAt(0) + "1", 10) * parseFloat(split[0].substr(2)) : parseFloat(split[0])) * ((v.indexOf("rad") === -1) ? 1 : _RAD2DEG) - (isRelative ? 0 : d);
+					if (split.length) {
+						if (directionalEnd) {
+							directionalEnd[p] = d + dif;
+						}
+						if (v.indexOf("short") !== -1) {
+							dif = dif % cap;
+							if (dif !== dif % (cap / 2)) {
+								dif = (dif < 0) ? dif + cap : dif - cap;
+							}
+						}
+						if (v.indexOf("_cw") !== -1 && dif < 0) {
+							dif = ((dif + cap * 9999999999) % cap) - ((dif / cap) | 0) * cap;
+						} else if (v.indexOf("ccw") !== -1 && dif > 0) {
+							dif = ((dif - cap * 9999999999) % cap) - ((dif / cap) | 0) * cap;
+						}
+					}
+					result = d + dif;
+				}
+				if (result < min && result > -min) {
+					result = 0;
+				}
+				return result;
+			},
+
+			_colorLookup = {aqua:[0,255,255],
+				lime:[0,255,0],
+				silver:[192,192,192],
+				black:[0,0,0],
+				maroon:[128,0,0],
+				teal:[0,128,128],
+				blue:[0,0,255],
+				navy:[0,0,128],
+				white:[255,255,255],
+				fuchsia:[255,0,255],
+				olive:[128,128,0],
+				yellow:[255,255,0],
+				orange:[255,165,0],
+				gray:[128,128,128],
+				purple:[128,0,128],
+				green:[0,128,0],
+				red:[255,0,0],
+				pink:[255,192,203],
+				cyan:[0,255,255],
+				transparent:[255,255,255,0]},
+
+			_hue = function(h, m1, m2) {
+				h = (h < 0) ? h + 1 : (h > 1) ? h - 1 : h;
+				return ((((h * 6 < 1) ? m1 + (m2 - m1) * h * 6 : (h < 0.5) ? m2 : (h * 3 < 2) ? m1 + (m2 - m1) * (2 / 3 - h) * 6 : m1) * 255) + 0.5) | 0;
+			},
+
+			/**
+			 * @private Parses a color (like #9F0, #FF9900, rgb(255,51,153) or hsl(108, 50%, 10%)) into an array with 3 elements for red, green, and blue or if toHSL parameter is true, it will populate the array with hue, saturation, and lightness values. If a relative value is found in an hsl() or hsla() string, it will preserve those relative prefixes and all the values in the array will be strings instead of numbers (in all other cases it will be populated with numbers).
+			 * @param {(string|number)} v The value the should be parsed which could be a string like #9F0 or rgb(255,102,51) or rgba(255,0,0,0.5) or it could be a number like 0xFF00CC or even a named color like red, blue, purple, etc.
+			 * @param {(boolean)} toHSL If true, an hsl() or hsla() value will be returned instead of rgb() or rgba()
+			 * @return {Array.<number>} An array containing red, green, and blue (and optionally alpha) in that order, or if the toHSL parameter was true, the array will contain hue, saturation and lightness (and optionally alpha) in that order. Always numbers unless there's a relative prefix found in an hsl() or hsla() string and toHSL is true.
+			 */
+			_parseColor = CSSPlugin.parseColor = function(v, toHSL) {
+				var a, r, g, b, h, s, l, max, min, d, wasHSL;
+				if (!v) {
+					a = _colorLookup.black;
+				} else if (typeof(v) === "number") {
+					a = [v >> 16, (v >> 8) & 255, v & 255];
+				} else {
+					if (v.charAt(v.length - 1) === ",") { //sometimes a trailing comma is included and we should chop it off (typically from a comma-delimited list of values like a textShadow:"2px 2px 2px blue, 5px 5px 5px rgb(255,0,0)" - in this example "blue," has a trailing comma. We could strip it out inside parseComplex() but we'd need to do it to the beginning and ending values plus it wouldn't provide protection from other potential scenarios like if the user passes in a similar value.
+						v = v.substr(0, v.length - 1);
+					}
+					if (_colorLookup[v]) {
+						a = _colorLookup[v];
+					} else if (v.charAt(0) === "#") {
+						if (v.length === 4) { //for shorthand like #9F0
+							r = v.charAt(1);
+							g = v.charAt(2);
+							b = v.charAt(3);
+							v = "#" + r + r + g + g + b + b;
+						}
+						v = parseInt(v.substr(1), 16);
+						a = [v >> 16, (v >> 8) & 255, v & 255];
+					} else if (v.substr(0, 3) === "hsl") {
+						a = wasHSL = v.match(_numExp);
+						if (!toHSL) {
+							h = (Number(a[0]) % 360) / 360;
+							s = Number(a[1]) / 100;
+							l = Number(a[2]) / 100;
+							g = (l <= 0.5) ? l * (s + 1) : l + s - l * s;
+							r = l * 2 - g;
+							if (a.length > 3) {
+								a[3] = Number(v[3]);
+							}
+							a[0] = _hue(h + 1 / 3, r, g);
+							a[1] = _hue(h, r, g);
+							a[2] = _hue(h - 1 / 3, r, g);
+						} else if (v.indexOf("=") !== -1) { //if relative values are found, just return the raw strings with the relative prefixes in place.
+							return v.match(_relNumExp);
+						}
+					} else {
+						a = v.match(_numExp) || _colorLookup.transparent;
+					}
+					a[0] = Number(a[0]);
+					a[1] = Number(a[1]);
+					a[2] = Number(a[2]);
+					if (a.length > 3) {
+						a[3] = Number(a[3]);
+					}
+				}
+				if (toHSL && !wasHSL) {
+					r = a[0] / 255;
+					g = a[1] / 255;
+					b = a[2] / 255;
+					max = Math.max(r, g, b);
+					min = Math.min(r, g, b);
+					l = (max + min) / 2;
+					if (max === min) {
+						h = s = 0;
+					} else {
+						d = max - min;
+						s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+						h = (max === r) ? (g - b) / d + (g < b ? 6 : 0) : (max === g) ? (b - r) / d + 2 : (r - g) / d + 4;
+						h *= 60;
+					}
+					a[0] = (h + 0.5) | 0;
+					a[1] = (s * 100 + 0.5) | 0;
+					a[2] = (l * 100 + 0.5) | 0;
+				}
+				return a;
+			},
+			_formatColors = function(s, toHSL) {
+				var colors = s.match(_colorExp) || [],
+					charIndex = 0,
+					parsed = "",
+					i, color, temp;
+				if (!colors.length) {
+					return s;
+				}
+				for (i = 0; i < colors.length; i++) {
+					color = colors[i];
+					temp = s.substr(charIndex, s.indexOf(color, charIndex)-charIndex);
+					charIndex += temp.length + color.length;
+					color = _parseColor(color, toHSL);
+					if (color.length === 3) {
+						color.push(1);
+					}
+					parsed += temp + (toHSL ? "hsla(" + color[0] + "," + color[1] + "%," + color[2] + "%," + color[3] : "rgba(" + color.join(",")) + ")";
+				}
+				return parsed + s.substr(charIndex);
+			},
+			_colorExp = "(?:\\b(?:(?:rgb|rgba|hsl|hsla)\\(.+?\\))|\\B#(?:[0-9a-f]{3}){1,2}\\b"; //we'll dynamically build this Regular Expression to conserve file size. After building it, it will be able to find rgb(), rgba(), # (hexadecimal), and named color values like red, blue, purple, etc.
+
+		for (p in _colorLookup) {
+			_colorExp += "|" + p + "\\b";
+		}
+		_colorExp = new RegExp(_colorExp+")", "gi");
+
+		CSSPlugin.colorStringFilter = function(a) {
+			var combined = a[0] + " " + a[1],
+				toHSL;
+			if (_colorExp.test(combined)) {
+				toHSL = (combined.indexOf("hsl(") !== -1 || combined.indexOf("hsla(") !== -1);
+				a[0] = _formatColors(a[0], toHSL);
+				a[1] = _formatColors(a[1], toHSL);
+			}
+			_colorExp.lastIndex = 0;
+		};
+
+		if (!TweenLite.defaultStringFilter) {
+			TweenLite.defaultStringFilter = CSSPlugin.colorStringFilter;
+		}
+
+		/**
+		 * @private Returns a formatter function that handles taking a string (or number in some cases) and returning a consistently formatted one in terms of delimiters, quantity of values, etc. For example, we may get boxShadow values defined as "0px red" or "0px 0px 10px rgb(255,0,0)" or "0px 0px 20px 20px #F00" and we need to ensure that what we get back is described with 4 numbers and a color. This allows us to feed it into the _parseComplex() method and split the values up appropriately. The neat thing about this _getFormatter() function is that the dflt defines a pattern as well as a default, so for example, _getFormatter("0px 0px 0px 0px #777", true) not only sets the default as 0px for all distances and #777 for the color, but also sets the pattern such that 4 numbers and a color will always get returned.
+		 * @param {!string} dflt The default value and pattern to follow. So "0px 0px 0px 0px #777" will ensure that 4 numbers and a color will always get returned.
+		 * @param {boolean=} clr If true, the values should be searched for color-related data. For example, boxShadow values typically contain a color whereas borderRadius don't.
+		 * @param {boolean=} collapsible If true, the value is a top/left/right/bottom style one that acts like margin or padding, where if only one value is received, it's used for all 4; if 2 are received, the first is duplicated for 3rd (bottom) and the 2nd is duplicated for the 4th spot (left), etc.
+		 * @return {Function} formatter function
+		 */
+		var _getFormatter = function(dflt, clr, collapsible, multi) {
+				if (dflt == null) {
+					return function(v) {return v;};
+				}
+				var dColor = clr ? (dflt.match(_colorExp) || [""])[0] : "",
+					dVals = dflt.split(dColor).join("").match(_valuesExp) || [],
+					pfx = dflt.substr(0, dflt.indexOf(dVals[0])),
+					sfx = (dflt.charAt(dflt.length - 1) === ")") ? ")" : "",
+					delim = (dflt.indexOf(" ") !== -1) ? " " : ",",
+					numVals = dVals.length,
+					dSfx = (numVals > 0) ? dVals[0].replace(_numExp, "") : "",
+					formatter;
+				if (!numVals) {
+					return function(v) {return v;};
+				}
+				if (clr) {
+					formatter = function(v) {
+						var color, vals, i, a;
+						if (typeof(v) === "number") {
+							v += dSfx;
+						} else if (multi && _commasOutsideParenExp.test(v)) {
+							a = v.replace(_commasOutsideParenExp, "|").split("|");
+							for (i = 0; i < a.length; i++) {
+								a[i] = formatter(a[i]);
+							}
+							return a.join(",");
+						}
+						color = (v.match(_colorExp) || [dColor])[0];
+						vals = v.split(color).join("").match(_valuesExp) || [];
+						i = vals.length;
+						if (numVals > i--) {
+							while (++i < numVals) {
+								vals[i] = collapsible ? vals[(((i - 1) / 2) | 0)] : dVals[i];
+							}
+						}
+						return pfx + vals.join(delim) + delim + color + sfx + (v.indexOf("inset") !== -1 ? " inset" : "");
+					};
+					return formatter;
+
+				}
+				formatter = function(v) {
+					var vals, a, i;
+					if (typeof(v) === "number") {
+						v += dSfx;
+					} else if (multi && _commasOutsideParenExp.test(v)) {
+						a = v.replace(_commasOutsideParenExp, "|").split("|");
+						for (i = 0; i < a.length; i++) {
+							a[i] = formatter(a[i]);
+						}
+						return a.join(",");
+					}
+					vals = v.match(_valuesExp) || [];
+					i = vals.length;
+					if (numVals > i--) {
+						while (++i < numVals) {
+							vals[i] = collapsible ? vals[(((i - 1) / 2) | 0)] : dVals[i];
+						}
+					}
+					return pfx + vals.join(delim) + sfx;
+				};
+				return formatter;
+			},
+
+			/**
+			 * @private returns a formatter function that's used for edge-related values like marginTop, marginLeft, paddingBottom, paddingRight, etc. Just pass a comma-delimited list of property names related to the edges.
+			 * @param {!string} props a comma-delimited list of property names in order from top to left, like "marginTop,marginRight,marginBottom,marginLeft"
+			 * @return {Function} a formatter function
+			 */
+			_getEdgeParser = function(props) {
+				props = props.split(",");
+				return function(t, e, p, cssp, pt, plugin, vars) {
+					var a = (e + "").split(" "),
+						i;
+					vars = {};
+					for (i = 0; i < 4; i++) {
+						vars[props[i]] = a[i] = a[i] || a[(((i - 1) / 2) >> 0)];
+					}
+					return cssp.parse(t, vars, pt, plugin);
+				};
+			},
+
+			// @private used when other plugins must tween values first, like BezierPlugin or ThrowPropsPlugin, etc. That plugin's setRatio() gets called first so that the values are updated, and then we loop through the MiniPropTweens which handle copying the values into their appropriate slots so that they can then be applied correctly in the main CSSPlugin setRatio() method. Remember, we typically create a proxy object that has a bunch of uniquely-named properties that we feed to the sub-plugin and it does its magic normally, and then we must interpret those values and apply them to the css because often numbers must get combined/concatenated, suffixes added, etc. to work with css, like boxShadow could have 4 values plus a color.
+			_setPluginRatio = _internals._setPluginRatio = function(v) {
+				this.plugin.setRatio(v);
+				var d = this.data,
+					proxy = d.proxy,
+					mpt = d.firstMPT,
+					min = 0.000001,
+					val, pt, i, str, p;
+				while (mpt) {
+					val = proxy[mpt.v];
+					if (mpt.r) {
+						val = Math.round(val);
+					} else if (val < min && val > -min) {
+						val = 0;
+					}
+					mpt.t[mpt.p] = val;
+					mpt = mpt._next;
+				}
+				if (d.autoRotate) {
+					d.autoRotate.rotation = d.mod ? d.mod(proxy.rotation, this.t) : proxy.rotation; //special case for ModifyPlugin to hook into an auto-rotating bezier
+				}
+				//at the end, we must set the CSSPropTween's "e" (end) value dynamically here because that's what is used in the final setRatio() method. Same for "b" at the beginning.
+				if (v === 1 || v === 0) {
+					mpt = d.firstMPT;
+					p = (v === 1) ? "e" : "b";
+					while (mpt) {
+						pt = mpt.t;
+						if (!pt.type) {
+							pt[p] = pt.s + pt.xs0;
+						} else if (pt.type === 1) {
+							str = pt.xs0 + pt.s + pt.xs1;
+							for (i = 1; i < pt.l; i++) {
+								str += pt["xn"+i] + pt["xs"+(i+1)];
+							}
+							pt[p] = str;
+						}
+						mpt = mpt._next;
+					}
+				}
+			},
+
+			/**
+			 * @private @constructor Used by a few SpecialProps to hold important values for proxies. For example, _parseToProxy() creates a MiniPropTween instance for each property that must get tweened on the proxy, and we record the original property name as well as the unique one we create for the proxy, plus whether or not the value needs to be rounded plus the original value.
+			 * @param {!Object} t target object whose property we're tweening (often a CSSPropTween)
+			 * @param {!string} p property name
+			 * @param {(number|string|object)} v value
+			 * @param {MiniPropTween=} next next MiniPropTween in the linked list
+			 * @param {boolean=} r if true, the tweened value should be rounded to the nearest integer
+			 */
+			MiniPropTween = function(t, p, v, next, r) {
+				this.t = t;
+				this.p = p;
+				this.v = v;
+				this.r = r;
+				if (next) {
+					next._prev = this;
+					this._next = next;
+				}
+			},
+
+			/**
+			 * @private Most other plugins (like BezierPlugin and ThrowPropsPlugin and others) can only tween numeric values, but CSSPlugin must accommodate special values that have a bunch of extra data (like a suffix or strings between numeric values, etc.). For example, boxShadow has values like "10px 10px 20px 30px rgb(255,0,0)" which would utterly confuse other plugins. This method allows us to split that data apart and grab only the numeric data and attach it to uniquely-named properties of a generic proxy object ({}) so that we can feed that to virtually any plugin to have the numbers tweened. However, we must also keep track of which properties from the proxy go with which CSSPropTween values and instances. So we create a linked list of MiniPropTweens. Each one records a target (the original CSSPropTween), property (like "s" or "xn1" or "xn2") that we're tweening and the unique property name that was used for the proxy (like "boxShadow_xn1" and "boxShadow_xn2") and whether or not they need to be rounded. That way, in the _setPluginRatio() method we can simply copy the values over from the proxy to the CSSPropTween instance(s). Then, when the main CSSPlugin setRatio() method runs and applies the CSSPropTween values accordingly, they're updated nicely. So the external plugin tweens the numbers, _setPluginRatio() copies them over, and setRatio() acts normally, applying css-specific values to the element.
+			 * This method returns an object that has the following properties:
+			 *  - proxy: a generic object containing the starting values for all the properties that will be tweened by the external plugin.  This is what we feed to the external _onInitTween() as the target
+			 *  - end: a generic object containing the ending values for all the properties that will be tweened by the external plugin. This is what we feed to the external plugin's _onInitTween() as the destination values
+			 *  - firstMPT: the first MiniPropTween in the linked list
+			 *  - pt: the first CSSPropTween in the linked list that was created when parsing. If shallow is true, this linked list will NOT attach to the one passed into the _parseToProxy() as the "pt" (4th) parameter.
+			 * @param {!Object} t target object to be tweened
+			 * @param {!(Object|string)} vars the object containing the information about the tweening values (typically the end/destination values) that should be parsed
+			 * @param {!CSSPlugin} cssp The CSSPlugin instance
+			 * @param {CSSPropTween=} pt the next CSSPropTween in the linked list
+			 * @param {TweenPlugin=} plugin the external TweenPlugin instance that will be handling tweening the numeric values
+			 * @param {boolean=} shallow if true, the resulting linked list from the parse will NOT be attached to the CSSPropTween that was passed in as the "pt" (4th) parameter.
+			 * @return An object containing the following properties: proxy, end, firstMPT, and pt (see above for descriptions)
+			 */
+			_parseToProxy = _internals._parseToProxy = function(t, vars, cssp, pt, plugin, shallow) {
+				var bpt = pt,
+					start = {},
+					end = {},
+					transform = cssp._transform,
+					oldForce = _forcePT,
+					i, p, xp, mpt, firstPT;
+				cssp._transform = null;
+				_forcePT = vars;
+				pt = firstPT = cssp.parse(t, vars, pt, plugin);
+				_forcePT = oldForce;
+				//break off from the linked list so the new ones are isolated.
+				if (shallow) {
+					cssp._transform = transform;
+					if (bpt) {
+						bpt._prev = null;
+						if (bpt._prev) {
+							bpt._prev._next = null;
+						}
+					}
+				}
+				while (pt && pt !== bpt) {
+					if (pt.type <= 1) {
+						p = pt.p;
+						end[p] = pt.s + pt.c;
+						start[p] = pt.s;
+						if (!shallow) {
+							mpt = new MiniPropTween(pt, "s", p, mpt, pt.r);
+							pt.c = 0;
+						}
+						if (pt.type === 1) {
+							i = pt.l;
+							while (--i > 0) {
+								xp = "xn" + i;
+								p = pt.p + "_" + xp;
+								end[p] = pt.data[xp];
+								start[p] = pt[xp];
+								if (!shallow) {
+									mpt = new MiniPropTween(pt, xp, p, mpt, pt.rxp[xp]);
+								}
+							}
+						}
+					}
+					pt = pt._next;
+				}
+				return {proxy:start, end:end, firstMPT:mpt, pt:firstPT};
+			},
+
+
+
+			/**
+			 * @constructor Each property that is tweened has at least one CSSPropTween associated with it. These instances store important information like the target, property, starting value, amount of change, etc. They can also optionally have a number of "extra" strings and numeric values named xs1, xn1, xs2, xn2, xs3, xn3, etc. where "s" indicates string and "n" indicates number. These can be pieced together in a complex-value tween (type:1) that has alternating types of data like a string, number, string, number, etc. For example, boxShadow could be "5px 5px 8px rgb(102, 102, 51)". In that value, there are 6 numbers that may need to tween and then pieced back together into a string again with spaces, suffixes, etc. xs0 is special in that it stores the suffix for standard (type:0) tweens, -OR- the first string (prefix) in a complex-value (type:1) CSSPropTween -OR- it can be the non-tweening value in a type:-1 CSSPropTween. We do this to conserve memory.
+			 * CSSPropTweens have the following optional properties as well (not defined through the constructor):
+			 *  - l: Length in terms of the number of extra properties that the CSSPropTween has (default: 0). For example, for a boxShadow we may need to tween 5 numbers in which case l would be 5; Keep in mind that the start/end values for the first number that's tweened are always stored in the s and c properties to conserve memory. All additional values thereafter are stored in xn1, xn2, etc.
+			 *  - xfirst: The first instance of any sub-CSSPropTweens that are tweening properties of this instance. For example, we may split up a boxShadow tween so that there's a main CSSPropTween of type:1 that has various xs* and xn* values associated with the h-shadow, v-shadow, blur, color, etc. Then we spawn a CSSPropTween for each of those that has a higher priority and runs BEFORE the main CSSPropTween so that the values are all set by the time it needs to re-assemble them. The xfirst gives us an easy way to identify the first one in that chain which typically ends at the main one (because they're all prepende to the linked list)
+			 *  - plugin: The TweenPlugin instance that will handle the tweening of any complex values. For example, sometimes we don't want to use normal subtweens (like xfirst refers to) to tween the values - we might want ThrowPropsPlugin or BezierPlugin some other plugin to do the actual tweening, so we create a plugin instance and store a reference here. We need this reference so that if we get a request to round values or disable a tween, we can pass along that request.
+			 *  - data: Arbitrary data that needs to be stored with the CSSPropTween. Typically if we're going to have a plugin handle the tweening of a complex-value tween, we create a generic object that stores the END values that we're tweening to and the CSSPropTween's xs1, xs2, etc. have the starting values. We store that object as data. That way, we can simply pass that object to the plugin and use the CSSPropTween as the target.
+			 *  - setRatio: Only used for type:2 tweens that require custom functionality. In this case, we call the CSSPropTween's setRatio() method and pass the ratio each time the tween updates. This isn't quite as efficient as doing things directly in the CSSPlugin's setRatio() method, but it's very convenient and flexible.
+			 * @param {!Object} t Target object whose property will be tweened. Often a DOM element, but not always. It could be anything.
+			 * @param {string} p Property to tween (name). For example, to tween element.width, p would be "width".
+			 * @param {number} s Starting numeric value
+			 * @param {number} c Change in numeric value over the course of the entire tween. For example, if element.width starts at 5 and should end at 100, c would be 95.
+			 * @param {CSSPropTween=} next The next CSSPropTween in the linked list. If one is defined, we will define its _prev as the new instance, and the new instance's _next will be pointed at it.
+			 * @param {number=} type The type of CSSPropTween where -1 = a non-tweening value, 0 = a standard simple tween, 1 = a complex value (like one that has multiple numbers in a comma- or space-delimited string like border:"1px solid red"), and 2 = one that uses a custom setRatio function that does all of the work of applying the values on each update.
+			 * @param {string=} n Name of the property that should be used for overwriting purposes which is typically the same as p but not always. For example, we may need to create a subtween for the 2nd part of a "clip:rect(...)" tween in which case "p" might be xs1 but "n" is still "clip"
+			 * @param {boolean=} r If true, the value(s) should be rounded
+			 * @param {number=} pr Priority in the linked list order. Higher priority CSSPropTweens will be updated before lower priority ones. The default priority is 0.
+			 * @param {string=} b Beginning value. We store this to ensure that it is EXACTLY what it was when the tween began without any risk of interpretation issues.
+			 * @param {string=} e Ending value. We store this to ensure that it is EXACTLY what the user defined at the end of the tween without any risk of interpretation issues.
+			 */
+			CSSPropTween = _internals.CSSPropTween = function(t, p, s, c, next, type, n, r, pr, b, e) {
+				this.t = t; //target
+				this.p = p; //property
+				this.s = s; //starting value
+				this.c = c; //change value
+				this.n = n || p; //name that this CSSPropTween should be associated to (usually the same as p, but not always - n is what overwriting looks at)
+				if (!(t instanceof CSSPropTween)) {
+					_overwriteProps.push(this.n);
+				}
+				this.r = r; //round (boolean)
+				this.type = type || 0; //0 = normal tween, -1 = non-tweening (in which case xs0 will be applied to the target's property, like tp.t[tp.p] = tp.xs0), 1 = complex-value SpecialProp, 2 = custom setRatio() that does all the work
+				if (pr) {
+					this.pr = pr;
+					_hasPriority = true;
+				}
+				this.b = (b === undefined) ? s : b;
+				this.e = (e === undefined) ? s + c : e;
+				if (next) {
+					this._next = next;
+					next._prev = this;
+				}
+			},
+
+			_addNonTweeningNumericPT = function(target, prop, start, end, next, overwriteProp) { //cleans up some code redundancies and helps minification. Just a fast way to add a NUMERIC non-tweening CSSPropTween
+				var pt = new CSSPropTween(target, prop, start, end - start, next, -1, overwriteProp);
+				pt.b = start;
+				pt.e = pt.xs0 = end;
+				return pt;
+			},
+
+			/**
+			 * Takes a target, the beginning value and ending value (as strings) and parses them into a CSSPropTween (possibly with child CSSPropTweens) that accommodates multiple numbers, colors, comma-delimited values, etc. For example:
+			 * sp.parseComplex(element, "boxShadow", "5px 10px 20px rgb(255,102,51)", "0px 0px 0px red", true, "0px 0px 0px rgb(0,0,0,0)", pt);
+			 * It will walk through the beginning and ending values (which should be in the same format with the same number and type of values) and figure out which parts are numbers, what strings separate the numeric/tweenable values, and then create the CSSPropTweens accordingly. If a plugin is defined, no child CSSPropTweens will be created. Instead, the ending values will be stored in the "data" property of the returned CSSPropTween like: {s:-5, xn1:-10, xn2:-20, xn3:255, xn4:0, xn5:0} so that it can be fed to any other plugin and it'll be plain numeric tweens but the recomposition of the complex value will be handled inside CSSPlugin's setRatio().
+			 * If a setRatio is defined, the type of the CSSPropTween will be set to 2 and recomposition of the values will be the responsibility of that method.
+			 *
+			 * @param {!Object} t Target whose property will be tweened
+			 * @param {!string} p Property that will be tweened (its name, like "left" or "backgroundColor" or "boxShadow")
+			 * @param {string} b Beginning value
+			 * @param {string} e Ending value
+			 * @param {boolean} clrs If true, the value could contain a color value like "rgb(255,0,0)" or "#F00" or "red". The default is false, so no colors will be recognized (a performance optimization)
+			 * @param {(string|number|Object)} dflt The default beginning value that should be used if no valid beginning value is defined or if the number of values inside the complex beginning and ending values don't match
+			 * @param {?CSSPropTween} pt CSSPropTween instance that is the current head of the linked list (we'll prepend to this).
+			 * @param {number=} pr Priority in the linked list order. Higher priority properties will be updated before lower priority ones. The default priority is 0.
+			 * @param {TweenPlugin=} plugin If a plugin should handle the tweening of extra properties, pass the plugin instance here. If one is defined, then NO subtweens will be created for any extra properties (the properties will be created - just not additional CSSPropTween instances to tween them) because the plugin is expected to do so. However, the end values WILL be populated in the "data" property, like {s:100, xn1:50, xn2:300}
+			 * @param {function(number)=} setRatio If values should be set in a custom function instead of being pieced together in a type:1 (complex-value) CSSPropTween, define that custom function here.
+			 * @return {CSSPropTween} The first CSSPropTween in the linked list which includes the new one(s) added by the parseComplex() call.
+			 */
+			_parseComplex = CSSPlugin.parseComplex = function(t, p, b, e, clrs, dflt, pt, pr, plugin, setRatio) {
+				//DEBUG: _log("parseComplex: "+p+", b: "+b+", e: "+e);
+				b = b || dflt || "";
+				if (typeof(e) === "function") {
+					e = e(_index, _target);
+				}
+				pt = new CSSPropTween(t, p, 0, 0, pt, (setRatio ? 2 : 1), null, false, pr, b, e);
+				e += ""; //ensures it's a string
+				if (clrs && _colorExp.test(e + b)) { //if colors are found, normalize the formatting to rgba() or hsla().
+					e = [b, e];
+					CSSPlugin.colorStringFilter(e);
+					b = e[0];
+					e = e[1];
+				}
+				var ba = b.split(", ").join(",").split(" "), //beginning array
+					ea = e.split(", ").join(",").split(" "), //ending array
+					l = ba.length,
+					autoRound = (_autoRound !== false),
+					i, xi, ni, bv, ev, bnums, enums, bn, hasAlpha, temp, cv, str, useHSL;
+				if (e.indexOf(",") !== -1 || b.indexOf(",") !== -1) {
+					ba = ba.join(" ").replace(_commasOutsideParenExp, ", ").split(" ");
+					ea = ea.join(" ").replace(_commasOutsideParenExp, ", ").split(" ");
+					l = ba.length;
+				}
+				if (l !== ea.length) {
+					//DEBUG: _log("mismatched formatting detected on " + p + " (" + b + " vs " + e + ")");
+					ba = (dflt || "").split(" ");
+					l = ba.length;
+				}
+				pt.plugin = plugin;
+				pt.setRatio = setRatio;
+				_colorExp.lastIndex = 0;
+				for (i = 0; i < l; i++) {
+					bv = ba[i];
+					ev = ea[i];
+					bn = parseFloat(bv);
+					//if the value begins with a number (most common). It's fine if it has a suffix like px
+					if (bn || bn === 0) {
+						pt.appendXtra("", bn, _parseChange(ev, bn), ev.replace(_relNumExp, ""), (autoRound && ev.indexOf("px") !== -1), true);
+
+					//if the value is a color
+					} else if (clrs && _colorExp.test(bv)) {
+						str = ev.indexOf(")") + 1;
+						str = ")" + (str ? ev.substr(str) : ""); //if there's a comma or ) at the end, retain it.
+						useHSL = (ev.indexOf("hsl") !== -1 && _supportsOpacity);
+						temp = ev; //original string value so we can look for any prefix later.
+						bv = _parseColor(bv, useHSL);
+						ev = _parseColor(ev, useHSL);
+						hasAlpha = (bv.length + ev.length > 6);
+						if (hasAlpha && !_supportsOpacity && ev[3] === 0) { //older versions of IE don't support rgba(), so if the destination alpha is 0, just use "transparent" for the end color
+							pt["xs" + pt.l] += pt.l ? " transparent" : "transparent";
+							pt.e = pt.e.split(ea[i]).join("transparent");
+						} else {
+							if (!_supportsOpacity) { //old versions of IE don't support rgba().
+								hasAlpha = false;
+							}
+							if (useHSL) {
+								pt.appendXtra(temp.substr(0, temp.indexOf("hsl")) + (hasAlpha ? "hsla(" : "hsl("), bv[0], _parseChange(ev[0], bv[0]), ",", false, true)
+									.appendXtra("", bv[1], _parseChange(ev[1], bv[1]), "%,", false)
+									.appendXtra("", bv[2], _parseChange(ev[2], bv[2]), (hasAlpha ? "%," : "%" + str), false);
+							} else {
+								pt.appendXtra(temp.substr(0, temp.indexOf("rgb")) + (hasAlpha ? "rgba(" : "rgb("), bv[0], ev[0] - bv[0], ",", true, true)
+									.appendXtra("", bv[1], ev[1] - bv[1], ",", true)
+									.appendXtra("", bv[2], ev[2] - bv[2], (hasAlpha ? "," : str), true);
+							}
+
+							if (hasAlpha) {
+								bv = (bv.length < 4) ? 1 : bv[3];
+								pt.appendXtra("", bv, ((ev.length < 4) ? 1 : ev[3]) - bv, str, false);
+							}
+						}
+						_colorExp.lastIndex = 0; //otherwise the test() on the RegExp could move the lastIndex and taint future results.
+
+					} else {
+						bnums = bv.match(_numExp); //gets each group of numbers in the beginning value string and drops them into an array
+
+						//if no number is found, treat it as a non-tweening value and just append the string to the current xs.
+						if (!bnums) {
+							pt["xs" + pt.l] += (pt.l || pt["xs" + pt.l]) ? " " + ev : ev;
+
+						//loop through all the numbers that are found and construct the extra values on the pt.
+						} else {
+							enums = ev.match(_relNumExp); //get each group of numbers in the end value string and drop them into an array. We allow relative values too, like +=50 or -=.5
+							if (!enums || enums.length !== bnums.length) {
+								//DEBUG: _log("mismatched formatting detected on " + p + " (" + b + " vs " + e + ")");
+								return pt;
+							}
+							ni = 0;
+							for (xi = 0; xi < bnums.length; xi++) {
+								cv = bnums[xi];
+								temp = bv.indexOf(cv, ni);
+								pt.appendXtra(bv.substr(ni, temp - ni), Number(cv), _parseChange(enums[xi], cv), "", (autoRound && bv.substr(temp + cv.length, 2) === "px"), (xi === 0));
+								ni = temp + cv.length;
+							}
+							pt["xs" + pt.l] += bv.substr(ni);
+						}
+					}
+				}
+				//if there are relative values ("+=" or "-=" prefix), we need to adjust the ending value to eliminate the prefixes and combine the values properly.
+				if (e.indexOf("=") !== -1) if (pt.data) {
+					str = pt.xs0 + pt.data.s;
+					for (i = 1; i < pt.l; i++) {
+						str += pt["xs" + i] + pt.data["xn" + i];
+					}
+					pt.e = str + pt["xs" + i];
+				}
+				if (!pt.l) {
+					pt.type = -1;
+					pt.xs0 = pt.e;
+				}
+				return pt.xfirst || pt;
+			},
+			i = 9;
+
+
+		p = CSSPropTween.prototype;
+		p.l = p.pr = 0; //length (number of extra properties like xn1, xn2, xn3, etc.
+		while (--i > 0) {
+			p["xn" + i] = 0;
+			p["xs" + i] = "";
+		}
+		p.xs0 = "";
+		p._next = p._prev = p.xfirst = p.data = p.plugin = p.setRatio = p.rxp = null;
+
+
+		/**
+		 * Appends and extra tweening value to a CSSPropTween and automatically manages any prefix and suffix strings. The first extra value is stored in the s and c of the main CSSPropTween instance, but thereafter any extras are stored in the xn1, xn2, xn3, etc. The prefixes and suffixes are stored in the xs0, xs1, xs2, etc. properties. For example, if I walk through a clip value like "rect(10px, 5px, 0px, 20px)", the values would be stored like this:
+		 * xs0:"rect(", s:10, xs1:"px, ", xn1:5, xs2:"px, ", xn2:0, xs3:"px, ", xn3:20, xn4:"px)"
+		 * And they'd all get joined together when the CSSPlugin renders (in the setRatio() method).
+		 * @param {string=} pfx Prefix (if any)
+		 * @param {!number} s Starting value
+		 * @param {!number} c Change in numeric value over the course of the entire tween. For example, if the start is 5 and the end is 100, the change would be 95.
+		 * @param {string=} sfx Suffix (if any)
+		 * @param {boolean=} r Round (if true).
+		 * @param {boolean=} pad If true, this extra value should be separated by the previous one by a space. If there is no previous extra and pad is true, it will automatically drop the space.
+		 * @return {CSSPropTween} returns itself so that multiple methods can be chained together.
+		 */
+		p.appendXtra = function(pfx, s, c, sfx, r, pad) {
+			var pt = this,
+				l = pt.l;
+			pt["xs" + l] += (pad && (l || pt["xs" + l])) ? " " + pfx : pfx || "";
+			if (!c) if (l !== 0 && !pt.plugin) { //typically we'll combine non-changing values right into the xs to optimize performance, but we don't combine them when there's a plugin that will be tweening the values because it may depend on the values being split apart, like for a bezier, if a value doesn't change between the first and second iteration but then it does on the 3rd, we'll run into trouble because there's no xn slot for that value!
+				pt["xs" + l] += s + (sfx || "");
+				return pt;
+			}
+			pt.l++;
+			pt.type = pt.setRatio ? 2 : 1;
+			pt["xs" + pt.l] = sfx || "";
+			if (l > 0) {
+				pt.data["xn" + l] = s + c;
+				pt.rxp["xn" + l] = r; //round extra property (we need to tap into this in the _parseToProxy() method)
+				pt["xn" + l] = s;
+				if (!pt.plugin) {
+					pt.xfirst = new CSSPropTween(pt, "xn" + l, s, c, pt.xfirst || pt, 0, pt.n, r, pt.pr);
+					pt.xfirst.xs0 = 0; //just to ensure that the property stays numeric which helps modern browsers speed up processing. Remember, in the setRatio() method, we do pt.t[pt.p] = val + pt.xs0 so if pt.xs0 is "" (the default), it'll cast the end value as a string. When a property is a number sometimes and a string sometimes, it prevents the compiler from locking in the data type, slowing things down slightly.
+				}
+				return pt;
+			}
+			pt.data = {s:s + c};
+			pt.rxp = {};
+			pt.s = s;
+			pt.c = c;
+			pt.r = r;
+			return pt;
+		};
+
+		/**
+		 * @constructor A SpecialProp is basically a css property that needs to be treated in a non-standard way, like if it may contain a complex value like boxShadow:"5px 10px 15px rgb(255, 102, 51)" or if it is associated with another plugin like ThrowPropsPlugin or BezierPlugin. Every SpecialProp is associated with a particular property name like "boxShadow" or "throwProps" or "bezier" and it will intercept those values in the vars object that's passed to the CSSPlugin and handle them accordingly.
+		 * @param {!string} p Property name (like "boxShadow" or "throwProps")
+		 * @param {Object=} options An object containing any of the following configuration options:
+		 *                      - defaultValue: the default value
+		 *                      - parser: A function that should be called when the associated property name is found in the vars. This function should return a CSSPropTween instance and it should ensure that it is properly inserted into the linked list. It will receive 4 paramters: 1) The target, 2) The value defined in the vars, 3) The CSSPlugin instance (whose _firstPT should be used for the linked list), and 4) A computed style object if one was calculated (this is a speed optimization that allows retrieval of starting values quicker)
+		 *                      - formatter: a function that formats any value received for this special property (for example, boxShadow could take "5px 5px red" and format it to "5px 5px 0px 0px red" so that both the beginning and ending values have a common order and quantity of values.)
+		 *                      - prefix: if true, we'll determine whether or not this property requires a vendor prefix (like Webkit or Moz or ms or O)
+		 *                      - color: set this to true if the value for this SpecialProp may contain color-related values like rgb(), rgba(), etc.
+		 *                      - priority: priority in the linked list order. Higher priority SpecialProps will be updated before lower priority ones. The default priority is 0.
+		 *                      - multi: if true, the formatter should accommodate a comma-delimited list of values, like boxShadow could have multiple boxShadows listed out.
+		 *                      - collapsible: if true, the formatter should treat the value like it's a top/right/bottom/left value that could be collapsed, like "5px" would apply to all, "5px, 10px" would use 5px for top/bottom and 10px for right/left, etc.
+		 *                      - keyword: a special keyword that can [optionally] be found inside the value (like "inset" for boxShadow). This allows us to validate beginning/ending values to make sure they match (if the keyword is found in one, it'll be added to the other for consistency by default).
+		 */
+		var SpecialProp = function(p, options) {
+				options = options || {};
+				this.p = options.prefix ? _checkPropPrefix(p) || p : p;
+				_specialProps[p] = _specialProps[this.p] = this;
+				this.format = options.formatter || _getFormatter(options.defaultValue, options.color, options.collapsible, options.multi);
+				if (options.parser) {
+					this.parse = options.parser;
+				}
+				this.clrs = options.color;
+				this.multi = options.multi;
+				this.keyword = options.keyword;
+				this.dflt = options.defaultValue;
+				this.pr = options.priority || 0;
+			},
+
+			//shortcut for creating a new SpecialProp that can accept multiple properties as a comma-delimited list (helps minification). dflt can be an array for multiple values (we don't do a comma-delimited list because the default value may contain commas, like rect(0px,0px,0px,0px)). We attach this method to the SpecialProp class/object instead of using a private _createSpecialProp() method so that we can tap into it externally if necessary, like from another plugin.
+			_registerComplexSpecialProp = _internals._registerComplexSpecialProp = function(p, options, defaults) {
+				if (typeof(options) !== "object") {
+					options = {parser:defaults}; //to make backwards compatible with older versions of BezierPlugin and ThrowPropsPlugin
+				}
+				var a = p.split(","),
+					d = options.defaultValue,
+					i, temp;
+				defaults = defaults || [d];
+				for (i = 0; i < a.length; i++) {
+					options.prefix = (i === 0 && options.prefix);
+					options.defaultValue = defaults[i] || d;
+					temp = new SpecialProp(a[i], options);
+				}
+			},
+
+			//creates a placeholder special prop for a plugin so that the property gets caught the first time a tween of it is attempted, and at that time it makes the plugin register itself, thus taking over for all future tweens of that property. This allows us to not mandate that things load in a particular order and it also allows us to log() an error that informs the user when they attempt to tween an external plugin-related property without loading its .js file.
+			_registerPluginProp = _internals._registerPluginProp = function(p) {
+				if (!_specialProps[p]) {
+					var pluginName = p.charAt(0).toUpperCase() + p.substr(1) + "Plugin";
+					_registerComplexSpecialProp(p, {parser:function(t, e, p, cssp, pt, plugin, vars) {
+						var pluginClass = _globals.com.greensock.plugins[pluginName];
+						if (!pluginClass) {
+							_log("Error: " + pluginName + " js file not loaded.");
+							return pt;
+						}
+						pluginClass._cssRegister();
+						return _specialProps[p].parse(t, e, p, cssp, pt, plugin, vars);
+					}});
+				}
+			};
+
+
+		p = SpecialProp.prototype;
+
+		/**
+		 * Alias for _parseComplex() that automatically plugs in certain values for this SpecialProp, like its property name, whether or not colors should be sensed, the default value, and priority. It also looks for any keyword that the SpecialProp defines (like "inset" for boxShadow) and ensures that the beginning and ending values have the same number of values for SpecialProps where multi is true (like boxShadow and textShadow can have a comma-delimited list)
+		 * @param {!Object} t target element
+		 * @param {(string|number|object)} b beginning value
+		 * @param {(string|number|object)} e ending (destination) value
+		 * @param {CSSPropTween=} pt next CSSPropTween in the linked list
+		 * @param {TweenPlugin=} plugin If another plugin will be tweening the complex value, that TweenPlugin instance goes here.
+		 * @param {function=} setRatio If a custom setRatio() method should be used to handle this complex value, that goes here.
+		 * @return {CSSPropTween=} First CSSPropTween in the linked list
+		 */
+		p.parseComplex = function(t, b, e, pt, plugin, setRatio) {
+			var kwd = this.keyword,
+				i, ba, ea, l, bi, ei;
+			//if this SpecialProp's value can contain a comma-delimited list of values (like boxShadow or textShadow), we must parse them in a special way, and look for a keyword (like "inset" for boxShadow) and ensure that the beginning and ending BOTH have it if the end defines it as such. We also must ensure that there are an equal number of values specified (we can't tween 1 boxShadow to 3 for example)
+			if (this.multi) if (_commasOutsideParenExp.test(e) || _commasOutsideParenExp.test(b)) {
+				ba = b.replace(_commasOutsideParenExp, "|").split("|");
+				ea = e.replace(_commasOutsideParenExp, "|").split("|");
+			} else if (kwd) {
+				ba = [b];
+				ea = [e];
+			}
+			if (ea) {
+				l = (ea.length > ba.length) ? ea.length : ba.length;
+				for (i = 0; i < l; i++) {
+					b = ba[i] = ba[i] || this.dflt;
+					e = ea[i] = ea[i] || this.dflt;
+					if (kwd) {
+						bi = b.indexOf(kwd);
+						ei = e.indexOf(kwd);
+						if (bi !== ei) {
+							if (ei === -1) { //if the keyword isn't in the end value, remove it from the beginning one.
+								ba[i] = ba[i].split(kwd).join("");
+							} else if (bi === -1) { //if the keyword isn't in the beginning, add it.
+								ba[i] += " " + kwd;
+							}
+						}
+					}
+				}
+				b = ba.join(", ");
+				e = ea.join(", ");
+			}
+			return _parseComplex(t, this.p, b, e, this.clrs, this.dflt, pt, this.pr, plugin, setRatio);
+		};
+
+		/**
+		 * Accepts a target and end value and spits back a CSSPropTween that has been inserted into the CSSPlugin's linked list and conforms with all the conventions we use internally, like type:-1, 0, 1, or 2, setting up any extra property tweens, priority, etc. For example, if we have a boxShadow SpecialProp and call:
+		 * this._firstPT = sp.parse(element, "5px 10px 20px rgb(2550,102,51)", "boxShadow", this);
+		 * It should figure out the starting value of the element's boxShadow, compare it to the provided end value and create all the necessary CSSPropTweens of the appropriate types to tween the boxShadow. The CSSPropTween that gets spit back should already be inserted into the linked list (the 4th parameter is the current head, so prepend to that).
+		 * @param {!Object} t Target object whose property is being tweened
+		 * @param {Object} e End value as provided in the vars object (typically a string, but not always - like a throwProps would be an object).
+		 * @param {!string} p Property name
+		 * @param {!CSSPlugin} cssp The CSSPlugin instance that should be associated with this tween.
+		 * @param {?CSSPropTween} pt The CSSPropTween that is the current head of the linked list (we'll prepend to it)
+		 * @param {TweenPlugin=} plugin If a plugin will be used to tween the parsed value, this is the plugin instance.
+		 * @param {Object=} vars Original vars object that contains the data for parsing.
+		 * @return {CSSPropTween} The first CSSPropTween in the linked list which includes the new one(s) added by the parse() call.
+		 */
+		p.parse = function(t, e, p, cssp, pt, plugin, vars) {
+			return this.parseComplex(t.style, this.format(_getStyle(t, this.p, _cs, false, this.dflt)), this.format(e), pt, plugin);
+		};
+
+		/**
+		 * Registers a special property that should be intercepted from any "css" objects defined in tweens. This allows you to handle them however you want without CSSPlugin doing it for you. The 2nd parameter should be a function that accepts 3 parameters:
+		 *  1) Target object whose property should be tweened (typically a DOM element)
+		 *  2) The end/destination value (could be a string, number, object, or whatever you want)
+		 *  3) The tween instance (you probably don't need to worry about this, but it can be useful for looking up information like the duration)
+		 *
+		 * Then, your function should return a function which will be called each time the tween gets rendered, passing a numeric "ratio" parameter to your function that indicates the change factor (usually between 0 and 1). For example:
+		 *
+		 * CSSPlugin.registerSpecialProp("myCustomProp", function(target, value, tween) {
+		 *      var start = target.style.width;
+		 *      return function(ratio) {
+		 *              target.style.width = (start + value * ratio) + "px";
+		 *              console.log("set width to " + target.style.width);
+		 *          }
+		 * }, 0);
+		 *
+		 * Then, when I do this tween, it will trigger my special property:
+		 *
+		 * TweenLite.to(element, 1, {css:{myCustomProp:100}});
+		 *
+		 * In the example, of course, we're just changing the width, but you can do anything you want.
+		 *
+		 * @param {!string} name Property name (or comma-delimited list of property names) that should be intercepted and handled by your function. For example, if I define "myCustomProp", then it would handle that portion of the following tween: TweenLite.to(element, 1, {css:{myCustomProp:100}})
+		 * @param {!function(Object, Object, Object, string):function(number)} onInitTween The function that will be called when a tween of this special property is performed. The function will receive 4 parameters: 1) Target object that should be tweened, 2) Value that was passed to the tween, 3) The tween instance itself (rarely used), and 4) The property name that's being tweened. Your function should return a function that should be called on every update of the tween. That function will receive a single parameter that is a "change factor" value (typically between 0 and 1) indicating the amount of change as a ratio. You can use this to determine how to set the values appropriately in your function.
+		 * @param {number=} priority Priority that helps the engine determine the order in which to set the properties (default: 0). Higher priority properties will be updated before lower priority ones.
+		 */
+		CSSPlugin.registerSpecialProp = function(name, onInitTween, priority) {
+			_registerComplexSpecialProp(name, {parser:function(t, e, p, cssp, pt, plugin, vars) {
+				var rv = new CSSPropTween(t, p, 0, 0, pt, 2, p, false, priority);
+				rv.plugin = plugin;
+				rv.setRatio = onInitTween(t, e, cssp._tween, p);
+				return rv;
+			}, priority:priority});
+		};
+
+
+
+
+
+
+		//transform-related methods and properties
+		CSSPlugin.useSVGTransformAttr = true; //Safari and Firefox both have some rendering bugs when applying CSS transforms to SVG elements, so default to using the "transform" attribute instead (users can override this).
+		var _transformProps = ("scaleX,scaleY,scaleZ,x,y,z,skewX,skewY,rotation,rotationX,rotationY,perspective,xPercent,yPercent").split(","),
+			_transformProp = _checkPropPrefix("transform"), //the Javascript (camelCase) transform property, like msTransform, WebkitTransform, MozTransform, or OTransform.
+			_transformPropCSS = _prefixCSS + "transform",
+			_transformOriginProp = _checkPropPrefix("transformOrigin"),
+			_supports3D = (_checkPropPrefix("perspective") !== null),
+			Transform = _internals.Transform = function() {
+				this.perspective = parseFloat(CSSPlugin.defaultTransformPerspective) || 0;
+				this.force3D = (CSSPlugin.defaultForce3D === false || !_supports3D) ? false : CSSPlugin.defaultForce3D || "auto";
+			},
+			_SVGElement = _gsScope.SVGElement,
+			_useSVGTransformAttr,
+			//Some browsers (like Firefox and IE) don't honor transform-origin properly in SVG elements, so we need to manually adjust the matrix accordingly. We feature detect here rather than always doing the conversion for certain browsers because they may fix the problem at some point in the future.
+
+			_createSVG = function(type, container, attributes) {
+				var element = _doc.createElementNS("http://www.w3.org/2000/svg", type),
+					reg = /([a-z])([A-Z])/g,
+					p;
+				for (p in attributes) {
+					element.setAttributeNS(null, p.replace(reg, "$1-$2").toLowerCase(), attributes[p]);
+				}
+				container.appendChild(element);
+				return element;
+			},
+			_docElement = _doc.documentElement || {},
+			_forceSVGTransformAttr = (function() {
+				//IE and Android stock don't support CSS transforms on SVG elements, so we must write them to the "transform" attribute. We populate this variable in the _parseTransform() method, and only if/when we come across an SVG element
+				var force = _ieVers || (/Android/i.test(_agent) && !_gsScope.chrome),
+					svg, rect, width;
+				if (_doc.createElementNS && !force) { //IE8 and earlier doesn't support SVG anyway
+					svg = _createSVG("svg", _docElement);
+					rect = _createSVG("rect", svg, {width:100, height:50, x:100});
+					width = rect.getBoundingClientRect().width;
+					rect.style[_transformOriginProp] = "50% 50%";
+					rect.style[_transformProp] = "scaleX(0.5)";
+					force = (width === rect.getBoundingClientRect().width && !(_isFirefox && _supports3D)); //note: Firefox fails the test even though it does support CSS transforms in 3D. Since we can't push 3D stuff into the transform attribute, we force Firefox to pass the test here (as long as it does truly support 3D).
+					_docElement.removeChild(svg);
+				}
+				return force;
+			})(),
+			_parseSVGOrigin = function(e, local, decoratee, absolute, smoothOrigin, skipRecord) {
+				var tm = e._gsTransform,
+					m = _getMatrix(e, true),
+					v, x, y, xOrigin, yOrigin, a, b, c, d, tx, ty, determinant, xOriginOld, yOriginOld;
+				if (tm) {
+					xOriginOld = tm.xOrigin; //record the original values before we alter them.
+					yOriginOld = tm.yOrigin;
+				}
+				if (!absolute || (v = absolute.split(" ")).length < 2) {
+					b = e.getBBox();
+					if (b.x === 0 && b.y === 0 && b.width + b.height === 0) { //some browsers (like Firefox) misreport the bounds if the element has zero width and height (it just assumes it's at x:0, y:0), thus we need to manually grab the position in that case.
+						b = {x: parseFloat(e.hasAttribute("x") ? e.getAttribute("x") : e.hasAttribute("cx") ? e.getAttribute("cx") : 0) || 0, y: parseFloat(e.hasAttribute("y") ? e.getAttribute("y") : e.hasAttribute("cy") ? e.getAttribute("cy") : 0) || 0, width:0, height:0};
+					}
+					local = _parsePosition(local).split(" ");
+					v = [(local[0].indexOf("%") !== -1 ? parseFloat(local[0]) / 100 * b.width : parseFloat(local[0])) + b.x,
+						 (local[1].indexOf("%") !== -1 ? parseFloat(local[1]) / 100 * b.height : parseFloat(local[1])) + b.y];
+				}
+				decoratee.xOrigin = xOrigin = parseFloat(v[0]);
+				decoratee.yOrigin = yOrigin = parseFloat(v[1]);
+				if (absolute && m !== _identity2DMatrix) { //if svgOrigin is being set, we must invert the matrix and determine where the absolute point is, factoring in the current transforms. Otherwise, the svgOrigin would be based on the element's non-transformed position on the canvas.
+					a = m[0];
+					b = m[1];
+					c = m[2];
+					d = m[3];
+					tx = m[4];
+					ty = m[5];
+					determinant = (a * d - b * c);
+					if (determinant) { //if it's zero (like if scaleX and scaleY are zero), skip it to avoid errors with dividing by zero.
+						x = xOrigin * (d / determinant) + yOrigin * (-c / determinant) + ((c * ty - d * tx) / determinant);
+						y = xOrigin * (-b / determinant) + yOrigin * (a / determinant) - ((a * ty - b * tx) / determinant);
+						xOrigin = decoratee.xOrigin = v[0] = x;
+						yOrigin = decoratee.yOrigin = v[1] = y;
+					}
+				}
+				if (tm) { //avoid jump when transformOrigin is changed - adjust the x/y values accordingly
+					if (skipRecord) {
+						decoratee.xOffset = tm.xOffset;
+						decoratee.yOffset = tm.yOffset;
+						tm = decoratee;
+					}
+					if (smoothOrigin || (smoothOrigin !== false && CSSPlugin.defaultSmoothOrigin !== false)) {
+						x = xOrigin - xOriginOld;
+						y = yOrigin - yOriginOld;
+						//originally, we simply adjusted the x and y values, but that would cause problems if, for example, you created a rotational tween part-way through an x/y tween. Managing the offset in a separate variable gives us ultimate flexibility.
+						//tm.x -= x - (x * m[0] + y * m[2]);
+						//tm.y -= y - (x * m[1] + y * m[3]);
+						tm.xOffset += (x * m[0] + y * m[2]) - x;
+						tm.yOffset += (x * m[1] + y * m[3]) - y;
+					} else {
+						tm.xOffset = tm.yOffset = 0;
+					}
+				}
+				if (!skipRecord) {
+					e.setAttribute("data-svg-origin", v.join(" "));
+				}
+			},
+			_getBBoxHack = function(swapIfPossible) { //works around issues in some browsers (like Firefox) that don't correctly report getBBox() on SVG elements inside a <defs> element and/or <mask>. We try creating an SVG, adding it to the documentElement and toss the element in there so that it's definitely part of the rendering tree, then grab the bbox and if it works, we actually swap out the original getBBox() method for our own that does these extra steps whenever getBBox is needed. This helps ensure that performance is optimal (only do all these extra steps when absolutely necessary...most elements don't need it).
+				var svg = _createElement("svg", this.ownerSVGElement.getAttribute("xmlns") || "http://www.w3.org/2000/svg"),
+					oldParent = this.parentNode,
+					oldSibling = this.nextSibling,
+					oldCSS = this.style.cssText,
+					bbox;
+				_docElement.appendChild(svg);
+				svg.appendChild(this);
+				this.style.display = "block";
+				if (swapIfPossible) {
+					try {
+						bbox = this.getBBox();
+						this._originalGetBBox = this.getBBox;
+						this.getBBox = _getBBoxHack;
+					} catch (e) { }
+				} else if (this._originalGetBBox) {
+					bbox = this._originalGetBBox();
+				}
+				if (oldSibling) {
+					oldParent.insertBefore(this, oldSibling);
+				} else {
+					oldParent.appendChild(this);
+				}
+				_docElement.removeChild(svg);
+				this.style.cssText = oldCSS;
+				return bbox;
+			},
+			_getBBox = function(e) {
+				try {
+					return e.getBBox(); //Firefox throws errors if you try calling getBBox() on an SVG element that's not rendered (like in a <symbol> or <defs>). https://bugzilla.mozilla.org/show_bug.cgi?id=612118
+				} catch (error) {
+					return _getBBoxHack.call(e, true);
+				}
+			},
+			_isSVG = function(e) { //reports if the element is an SVG on which getBBox() actually works
+				return !!(_SVGElement && e.getCTM && _getBBox(e) && (!e.parentNode || e.ownerSVGElement));
+			},
+			_identity2DMatrix = [1,0,0,1,0,0],
+			_getMatrix = function(e, force2D) {
+				var tm = e._gsTransform || new Transform(),
+					rnd = 100000,
+					style = e.style,
+					isDefault, s, m, n, dec, none;
+				if (_transformProp) {
+					s = _getStyle(e, _transformPropCSS, null, true);
+				} else if (e.currentStyle) {
+					//for older versions of IE, we need to interpret the filter portion that is in the format: progid:DXImageTransform.Microsoft.Matrix(M11=6.123233995736766e-17, M12=-1, M21=1, M22=6.123233995736766e-17, sizingMethod='auto expand') Notice that we need to swap b and c compared to a normal matrix.
+					s = e.currentStyle.filter.match(_ieGetMatrixExp);
+					s = (s && s.length === 4) ? [s[0].substr(4), Number(s[2].substr(4)), Number(s[1].substr(4)), s[3].substr(4), (tm.x || 0), (tm.y || 0)].join(",") : "";
+				}
+				isDefault = (!s || s === "none" || s === "matrix(1, 0, 0, 1, 0, 0)");
+				if (_transformProp && ((none = (_getComputedStyle(e).display === "none")) || !e.parentNode)) {
+					if (none) { //browsers don't report transforms accurately unless the element is in the DOM and has a display value that's not "none". Firefox and Microsoft browsers have a partial bug where they'll report transforms even if display:none BUT not any percentage-based values like translate(-50%, 8px) will be reported as if it's translate(0, 8px).
+						n = style.display;
+						style.display = "block";
+					}
+					if (!e.parentNode) {
+						dec = 1; //flag
+						_docElement.appendChild(e);
+					}
+					s = _getStyle(e, _transformPropCSS, null, true);
+					isDefault = (!s || s === "none" || s === "matrix(1, 0, 0, 1, 0, 0)");
+					if (n) {
+						style.display = n;
+					} else if (none) {
+						_removeProp(style, "display");
+					}
+					if (dec) {
+						_docElement.removeChild(e);
+					}
+				}
+				if (tm.svg || (e.getCTM && _isSVG(e))) {
+					if (isDefault && (style[_transformProp] + "").indexOf("matrix") !== -1) { //some browsers (like Chrome 40) don't correctly report transforms that are applied inline on an SVG element (they don't get included in the computed style), so we double-check here and accept matrix values
+						s = style[_transformProp];
+						isDefault = 0;
+					}
+					m = e.getAttribute("transform");
+					if (isDefault && m) {
+						if (m.indexOf("matrix") !== -1) { //just in case there's a "transform" value specified as an attribute instead of CSS style. Accept either a matrix() or simple translate() value though.
+							s = m;
+							isDefault = 0;
+						} else if (m.indexOf("translate") !== -1) {
+							s = "matrix(1,0,0,1," + m.match(/(?:\-|\b)[\d\-\.e]+\b/gi).join(",") + ")";
+							isDefault = 0;
+						}
+					}
+				}
+				if (isDefault) {
+					return _identity2DMatrix;
+				}
+				//split the matrix values out into an array (m for matrix)
+				m = (s || "").match(_numExp) || [];
+				i = m.length;
+				while (--i > -1) {
+					n = Number(m[i]);
+					m[i] = (dec = n - (n |= 0)) ? ((dec * rnd + (dec < 0 ? -0.5 : 0.5)) | 0) / rnd + n : n; //convert strings to Numbers and round to 5 decimal places to avoid issues with tiny numbers. Roughly 20x faster than Number.toFixed(). We also must make sure to round before dividing so that values like 0.9999999999 become 1 to avoid glitches in browser rendering and interpretation of flipped/rotated 3D matrices. And don't just multiply the number by rnd, floor it, and then divide by rnd because the bitwise operations max out at a 32-bit signed integer, thus it could get clipped at a relatively low value (like 22,000.00000 for example).
+				}
+				return (force2D && m.length > 6) ? [m[0], m[1], m[4], m[5], m[12], m[13]] : m;
+			},
+
+			/**
+			 * Parses the transform values for an element, returning an object with x, y, z, scaleX, scaleY, scaleZ, rotation, rotationX, rotationY, skewX, and skewY properties. Note: by default (for performance reasons), all skewing is combined into skewX and rotation but skewY still has a place in the transform object so that we can record how much of the skew is attributed to skewX vs skewY. Remember, a skewY of 10 looks the same as a rotation of 10 and skewX of -10.
+			 * @param {!Object} t target element
+			 * @param {Object=} cs computed style object (optional)
+			 * @param {boolean=} rec if true, the transform values will be recorded to the target element's _gsTransform object, like target._gsTransform = {x:0, y:0, z:0, scaleX:1...}
+			 * @param {boolean=} parse if true, we'll ignore any _gsTransform values that already exist on the element, and force a reparsing of the css (calculated style)
+			 * @return {object} object containing all of the transform properties/values like {x:0, y:0, z:0, scaleX:1...}
+			 */
+			_getTransform = _internals.getTransform = function(t, cs, rec, parse) {
+				if (t._gsTransform && rec && !parse) {
+					return t._gsTransform; //if the element already has a _gsTransform, use that. Note: some browsers don't accurately return the calculated style for the transform (particularly for SVG), so it's almost always safest to just use the values we've already applied rather than re-parsing things.
+				}
+				var tm = rec ? t._gsTransform || new Transform() : new Transform(),
+					invX = (tm.scaleX < 0), //in order to interpret things properly, we need to know if the user applied a negative scaleX previously so that we can adjust the rotation and skewX accordingly. Otherwise, if we always interpret a flipped matrix as affecting scaleY and the user only wants to tween the scaleX on multiple sequential tweens, it would keep the negative scaleY without that being the user's intent.
+					min = 0.00002,
+					rnd = 100000,
+					zOrigin = _supports3D ? parseFloat(_getStyle(t, _transformOriginProp, cs, false, "0 0 0").split(" ")[2]) || tm.zOrigin  || 0 : 0,
+					defaultTransformPerspective = parseFloat(CSSPlugin.defaultTransformPerspective) || 0,
+					m, i, scaleX, scaleY, rotation, skewX;
+
+				tm.svg = !!(t.getCTM && _isSVG(t));
+				if (tm.svg) {
+					_parseSVGOrigin(t, _getStyle(t, _transformOriginProp, cs, false, "50% 50%") + "", tm, t.getAttribute("data-svg-origin"));
+					_useSVGTransformAttr = CSSPlugin.useSVGTransformAttr || _forceSVGTransformAttr;
+				}
+				m = _getMatrix(t);
+				if (m !== _identity2DMatrix) {
+
+					if (m.length === 16) {
+						//we'll only look at these position-related 6 variables first because if x/y/z all match, it's relatively safe to assume we don't need to re-parse everything which risks losing important rotational information (like rotationX:180 plus rotationY:180 would look the same as rotation:180 - there's no way to know for sure which direction was taken based solely on the matrix3d() values)
+						var a11 = m[0], a21 = m[1], a31 = m[2], a41 = m[3],
+							a12 = m[4], a22 = m[5], a32 = m[6], a42 = m[7],
+							a13 = m[8], a23 = m[9], a33 = m[10],
+							a14 = m[12], a24 = m[13], a34 = m[14],
+							a43 = m[11],
+							angle = Math.atan2(a32, a33),
+							t1, t2, t3, t4, cos, sin;
+						//we manually compensate for non-zero z component of transformOrigin to work around bugs in Safari
+						if (tm.zOrigin) {
+							a34 = -tm.zOrigin;
+							a14 = a13*a34-m[12];
+							a24 = a23*a34-m[13];
+							a34 = a33*a34+tm.zOrigin-m[14];
+						}
+						//note for possible future consolidation: rotationX: Math.atan2(a32, a33), rotationY: Math.atan2(-a31, Math.sqrt(a33 * a33 + a32 * a32)), rotation: Math.atan2(a21, a11), skew: Math.atan2(a12, a22). However, it doesn't seem to be quite as reliable as the full-on backwards rotation procedure.
+						tm.rotationX = angle * _RAD2DEG;
+						//rotationX
+						if (angle) {
+							cos = Math.cos(-angle);
+							sin = Math.sin(-angle);
+							t1 = a12*cos+a13*sin;
+							t2 = a22*cos+a23*sin;
+							t3 = a32*cos+a33*sin;
+							a13 = a12*-sin+a13*cos;
+							a23 = a22*-sin+a23*cos;
+							a33 = a32*-sin+a33*cos;
+							a43 = a42*-sin+a43*cos;
+							a12 = t1;
+							a22 = t2;
+							a32 = t3;
+						}
+						//rotationY
+						angle = Math.atan2(-a31, a33);
+						tm.rotationY = angle * _RAD2DEG;
+						if (angle) {
+							cos = Math.cos(-angle);
+							sin = Math.sin(-angle);
+							t1 = a11*cos-a13*sin;
+							t2 = a21*cos-a23*sin;
+							t3 = a31*cos-a33*sin;
+							a23 = a21*sin+a23*cos;
+							a33 = a31*sin+a33*cos;
+							a43 = a41*sin+a43*cos;
+							a11 = t1;
+							a21 = t2;
+							a31 = t3;
+						}
+						//rotationZ
+						angle = Math.atan2(a21, a11);
+						tm.rotation = angle * _RAD2DEG;
+						if (angle) {
+							cos = Math.cos(angle);
+							sin = Math.sin(angle);
+							t1 = a11*cos+a21*sin;
+							t2 = a12*cos+a22*sin;
+							t3 = a13*cos+a23*sin;
+							a21 = a21*cos-a11*sin;
+							a22 = a22*cos-a12*sin;
+							a23 = a23*cos-a13*sin;
+							a11 = t1;
+							a12 = t2;
+							a13 = t3;
+						}
+
+						if (tm.rotationX && Math.abs(tm.rotationX) + Math.abs(tm.rotation) > 359.9) { //when rotationY is set, it will often be parsed as 180 degrees different than it should be, and rotationX and rotation both being 180 (it looks the same), so we adjust for that here.
+							tm.rotationX = tm.rotation = 0;
+							tm.rotationY = 180 - tm.rotationY;
+						}
+
+						//skewX
+						angle = Math.atan2(a12, a22);
+
+						//scales
+						tm.scaleX = ((Math.sqrt(a11 * a11 + a21 * a21 + a31 * a31) * rnd + 0.5) | 0) / rnd;
+						tm.scaleY = ((Math.sqrt(a22 * a22 + a32 * a32) * rnd + 0.5) | 0) / rnd;
+						tm.scaleZ = ((Math.sqrt(a13 * a13 + a23 * a23 + a33 * a33) * rnd + 0.5) | 0) / rnd;
+						a11 /= tm.scaleX;
+						a12 /= tm.scaleY;
+						a21 /= tm.scaleX;
+						a22 /= tm.scaleY;
+						if (Math.abs(angle) > min) {
+							tm.skewX = angle * _RAD2DEG;
+							a12 = 0; //unskews
+							if (tm.skewType !== "simple") {
+								tm.scaleY *= 1 / Math.cos(angle); //by default, we compensate the scale based on the skew so that the element maintains a similar proportion when skewed, so we have to alter the scaleY here accordingly to match the default (non-adjusted) skewing that CSS does (stretching more and more as it skews).
+							}
+
+						} else {
+							tm.skewX = 0;
+						}
+
+						/* //for testing purposes
+						var transform = "matrix3d(",
+							comma = ",",
+							zero = "0";
+						a13 /= tm.scaleZ;
+						a23 /= tm.scaleZ;
+						a31 /= tm.scaleX;
+						a32 /= tm.scaleY;
+						a33 /= tm.scaleZ;
+						transform += ((a11 < min && a11 > -min) ? zero : a11) + comma + ((a21 < min && a21 > -min) ? zero : a21) + comma + ((a31 < min && a31 > -min) ? zero : a31);
+						transform += comma + ((a41 < min && a41 > -min) ? zero : a41) + comma + ((a12 < min && a12 > -min) ? zero : a12) + comma + ((a22 < min && a22 > -min) ? zero : a22);
+						transform += comma + ((a32 < min && a32 > -min) ? zero : a32) + comma + ((a42 < min && a42 > -min) ? zero : a42) + comma + ((a13 < min && a13 > -min) ? zero : a13);
+						transform += comma + ((a23 < min && a23 > -min) ? zero : a23) + comma + ((a33 < min && a33 > -min) ? zero : a33) + comma + ((a43 < min && a43 > -min) ? zero : a43) + comma;
+						transform += a14 + comma + a24 + comma + a34 + comma + (tm.perspective ? (1 + (-a34 / tm.perspective)) : 1) + ")";
+						console.log(transform);
+						document.querySelector(".test").style[_transformProp] = transform;
+						*/
+
+						tm.perspective = a43 ? 1 / ((a43 < 0) ? -a43 : a43) : 0;
+						tm.x = a14;
+						tm.y = a24;
+						tm.z = a34;
+						if (tm.svg) {
+							tm.x -= tm.xOrigin - (tm.xOrigin * a11 - tm.yOrigin * a12);
+							tm.y -= tm.yOrigin - (tm.yOrigin * a21 - tm.xOrigin * a22);
+						}
+
+					} else if ((!_supports3D || parse || !m.length || tm.x !== m[4] || tm.y !== m[5] || (!tm.rotationX && !tm.rotationY))) { //sometimes a 6-element matrix is returned even when we performed 3D transforms, like if rotationX and rotationY are 180. In cases like this, we still need to honor the 3D transforms. If we just rely on the 2D info, it could affect how the data is interpreted, like scaleY might get set to -1 or rotation could get offset by 180 degrees. For example, do a TweenLite.to(element, 1, {css:{rotationX:180, rotationY:180}}) and then later, TweenLite.to(element, 1, {css:{rotationX:0}}) and without this conditional logic in place, it'd jump to a state of being unrotated when the 2nd tween starts. Then again, we need to honor the fact that the user COULD alter the transforms outside of CSSPlugin, like by manually applying new css, so we try to sense that by looking at x and y because if those changed, we know the changes were made outside CSSPlugin and we force a reinterpretation of the matrix values. Also, in Webkit browsers, if the element's "display" is "none", its calculated style value will always return empty, so if we've already recorded the values in the _gsTransform object, we'll just rely on those.
+						var k = (m.length >= 6),
+							a = k ? m[0] : 1,
+							b = m[1] || 0,
+							c = m[2] || 0,
+							d = k ? m[3] : 1;
+						tm.x = m[4] || 0;
+						tm.y = m[5] || 0;
+						scaleX = Math.sqrt(a * a + b * b);
+						scaleY = Math.sqrt(d * d + c * c);
+						rotation = (a || b) ? Math.atan2(b, a) * _RAD2DEG : tm.rotation || 0; //note: if scaleX is 0, we cannot accurately measure rotation. Same for skewX with a scaleY of 0. Therefore, we default to the previously recorded value (or zero if that doesn't exist).
+						skewX = (c || d) ? Math.atan2(c, d) * _RAD2DEG + rotation : tm.skewX || 0;
+						tm.scaleX = scaleX;
+						tm.scaleY = scaleY;
+						tm.rotation = rotation;
+						tm.skewX = skewX;
+						if (_supports3D) {
+							tm.rotationX = tm.rotationY = tm.z = 0;
+							tm.perspective = defaultTransformPerspective;
+							tm.scaleZ = 1;
+						}
+						if (tm.svg) {
+							tm.x -= tm.xOrigin - (tm.xOrigin * a + tm.yOrigin * c);
+							tm.y -= tm.yOrigin - (tm.xOrigin * b + tm.yOrigin * d);
+						}
+					}
+					if (Math.abs(tm.skewX) > 90 && Math.abs(tm.skewX) < 270) {
+						if (invX) {
+							tm.scaleX *= -1;
+							tm.skewX += (tm.rotation <= 0) ? 180 : -180;
+							tm.rotation += (tm.rotation <= 0) ? 180 : -180;
+						} else {
+							tm.scaleY *= -1;
+							tm.skewX += (tm.skewX <= 0) ? 180 : -180;
+						}
+					}
+					tm.zOrigin = zOrigin;
+					//some browsers have a hard time with very small values like 2.4492935982947064e-16 (notice the "e-" towards the end) and would render the object slightly off. So we round to 0 in these cases. The conditional logic here is faster than calling Math.abs(). Also, browsers tend to render a SLIGHTLY rotated object in a fuzzy way, so we need to snap to exactly 0 when appropriate.
+					for (i in tm) {
+						if (tm[i] < min) if (tm[i] > -min) {
+							tm[i] = 0;
+						}
+					}
+				}
+				//DEBUG: _log("parsed rotation of " + t.getAttribute("id")+": "+(tm.rotationX)+", "+(tm.rotationY)+", "+(tm.rotation)+", scale: "+tm.scaleX+", "+tm.scaleY+", "+tm.scaleZ+", position: "+tm.x+", "+tm.y+", "+tm.z+", perspective: "+tm.perspective+ ", origin: "+ tm.xOrigin+ ","+ tm.yOrigin);
+				if (rec) {
+					t._gsTransform = tm; //record to the object's _gsTransform which we use so that tweens can control individual properties independently (we need all the properties to accurately recompose the matrix in the setRatio() method)
+					if (tm.svg) { //if we're supposed to apply transforms to the SVG element's "transform" attribute, make sure there aren't any CSS transforms applied or they'll override the attribute ones. Also clear the transform attribute if we're using CSS, just to be clean.
+						if (_useSVGTransformAttr && t.style[_transformProp]) {
+							TweenLite.delayedCall(0.001, function(){ //if we apply this right away (before anything has rendered), we risk there being no transforms for a brief moment and it also interferes with adjusting the transformOrigin in a tween with immediateRender:true (it'd try reading the matrix and it wouldn't have the appropriate data in place because we just removed it).
+								_removeProp(t.style, _transformProp);
+							});
+						} else if (!_useSVGTransformAttr && t.getAttribute("transform")) {
+							TweenLite.delayedCall(0.001, function(){
+								t.removeAttribute("transform");
+							});
+						}
+					}
+				}
+				return tm;
+			},
+
+			//for setting 2D transforms in IE6, IE7, and IE8 (must use a "filter" to emulate the behavior of modern day browser transforms)
+			_setIETransformRatio = function(v) {
+				var t = this.data, //refers to the element's _gsTransform object
+					ang = -t.rotation * _DEG2RAD,
+					skew = ang + t.skewX * _DEG2RAD,
+					rnd = 100000,
+					a = ((Math.cos(ang) * t.scaleX * rnd) | 0) / rnd,
+					b = ((Math.sin(ang) * t.scaleX * rnd) | 0) / rnd,
+					c = ((Math.sin(skew) * -t.scaleY * rnd) | 0) / rnd,
+					d = ((Math.cos(skew) * t.scaleY * rnd) | 0) / rnd,
+					style = this.t.style,
+					cs = this.t.currentStyle,
+					filters, val;
+				if (!cs) {
+					return;
+				}
+				val = b; //just for swapping the variables an inverting them (reused "val" to avoid creating another variable in memory). IE's filter matrix uses a non-standard matrix configuration (angle goes the opposite way, and b and c are reversed and inverted)
+				b = -c;
+				c = -val;
+				filters = cs.filter;
+				style.filter = ""; //remove filters so that we can accurately measure offsetWidth/offsetHeight
+				var w = this.t.offsetWidth,
+					h = this.t.offsetHeight,
+					clip = (cs.position !== "absolute"),
+					m = "progid:DXImageTransform.Microsoft.Matrix(M11=" + a + ", M12=" + b + ", M21=" + c + ", M22=" + d,
+					ox = t.x + (w * t.xPercent / 100),
+					oy = t.y + (h * t.yPercent / 100),
+					dx, dy;
+
+				//if transformOrigin is being used, adjust the offset x and y
+				if (t.ox != null) {
+					dx = ((t.oxp) ? w * t.ox * 0.01 : t.ox) - w / 2;
+					dy = ((t.oyp) ? h * t.oy * 0.01 : t.oy) - h / 2;
+					ox += dx - (dx * a + dy * b);
+					oy += dy - (dx * c + dy * d);
+				}
+
+				if (!clip) {
+					m += ", sizingMethod='auto expand')";
+				} else {
+					dx = (w / 2);
+					dy = (h / 2);
+					//translate to ensure that transformations occur around the correct origin (default is center).
+					m += ", Dx=" + (dx - (dx * a + dy * b) + ox) + ", Dy=" + (dy - (dx * c + dy * d) + oy) + ")";
+				}
+				if (filters.indexOf("DXImageTransform.Microsoft.Matrix(") !== -1) {
+					style.filter = filters.replace(_ieSetMatrixExp, m);
+				} else {
+					style.filter = m + " " + filters; //we must always put the transform/matrix FIRST (before alpha(opacity=xx)) to avoid an IE bug that slices part of the object when rotation is applied with alpha.
+				}
+
+				//at the end or beginning of the tween, if the matrix is normal (1, 0, 0, 1) and opacity is 100 (or doesn't exist), remove the filter to improve browser performance.
+				if (v === 0 || v === 1) if (a === 1) if (b === 0) if (c === 0) if (d === 1) if (!clip || m.indexOf("Dx=0, Dy=0") !== -1) if (!_opacityExp.test(filters) || parseFloat(RegExp.$1) === 100) if (filters.indexOf("gradient(" && filters.indexOf("Alpha")) === -1) {
+					style.removeAttribute("filter");
+				}
+
+				//we must set the margins AFTER applying the filter in order to avoid some bugs in IE8 that could (in rare scenarios) cause them to be ignored intermittently (vibration).
+				if (!clip) {
+					var mult = (_ieVers < 8) ? 1 : -1, //in Internet Explorer 7 and before, the box model is broken, causing the browser to treat the width/height of the actual rotated filtered image as the width/height of the box itself, but Microsoft corrected that in IE8. We must use a negative offset in IE8 on the right/bottom
+						marg, prop, dif;
+					dx = t.ieOffsetX || 0;
+					dy = t.ieOffsetY || 0;
+					t.ieOffsetX = Math.round((w - ((a < 0 ? -a : a) * w + (b < 0 ? -b : b) * h)) / 2 + ox);
+					t.ieOffsetY = Math.round((h - ((d < 0 ? -d : d) * h + (c < 0 ? -c : c) * w)) / 2 + oy);
+					for (i = 0; i < 4; i++) {
+						prop = _margins[i];
+						marg = cs[prop];
+						//we need to get the current margin in case it is being tweened separately (we want to respect that tween's changes)
+						val = (marg.indexOf("px") !== -1) ? parseFloat(marg) : _convertToPixels(this.t, prop, parseFloat(marg), marg.replace(_suffixExp, "")) || 0;
+						if (val !== t[prop]) {
+							dif = (i < 2) ? -t.ieOffsetX : -t.ieOffsetY; //if another tween is controlling a margin, we cannot only apply the difference in the ieOffsets, so we essentially zero-out the dx and dy here in that case. We record the margin(s) later so that we can keep comparing them, making this code very flexible.
+						} else {
+							dif = (i < 2) ? dx - t.ieOffsetX : dy - t.ieOffsetY;
+						}
+						style[prop] = (t[prop] = Math.round( val - dif * ((i === 0 || i === 2) ? 1 : mult) )) + "px";
+					}
+				}
+			},
+
+			/* translates a super small decimal to a string WITHOUT scientific notation
+			_safeDecimal = function(n) {
+				var s = (n < 0 ? -n : n) + "",
+					a = s.split("e-");
+				return (n < 0 ? "-0." : "0.") + new Array(parseInt(a[1], 10) || 0).join("0") + a[0].split(".").join("");
+			},
+			*/
+
+			_setTransformRatio = _internals.set3DTransformRatio = _internals.setTransformRatio = function(v) {
+				var t = this.data, //refers to the element's _gsTransform object
+					style = this.t.style,
+					angle = t.rotation,
+					rotationX = t.rotationX,
+					rotationY = t.rotationY,
+					sx = t.scaleX,
+					sy = t.scaleY,
+					sz = t.scaleZ,
+					x = t.x,
+					y = t.y,
+					z = t.z,
+					isSVG = t.svg,
+					perspective = t.perspective,
+					force3D = t.force3D,
+					skewY = t.skewY,
+					skewX = t.skewX,
+					t1,	a11, a12, a13, a21, a22, a23, a31, a32, a33, a41, a42, a43,
+					zOrigin, min, cos, sin, t2, transform, comma, zero, skew, rnd;
+				if (skewY) { //for performance reasons, we combine all skewing into the skewX and rotation values. Remember, a skewY of 10 degrees looks the same as a rotation of 10 degrees plus a skewX of 10 degrees.
+					skewX += skewY;
+					angle += skewY;
+				}
+
+				//check to see if we should render as 2D (and SVGs must use 2D when _useSVGTransformAttr is true)
+				if (((((v === 1 || v === 0) && force3D === "auto" && (this.tween._totalTime === this.tween._totalDuration || !this.tween._totalTime)) || !force3D) && !z && !perspective && !rotationY && !rotationX && sz === 1) || (_useSVGTransformAttr && isSVG) || !_supports3D) { //on the final render (which could be 0 for a from tween), if there are no 3D aspects, render in 2D to free up memory and improve performance especially on mobile devices. Check the tween's totalTime/totalDuration too in order to make sure it doesn't happen between repeats if it's a repeating tween.
+
+					//2D
+					if (angle || skewX || isSVG) {
+						angle *= _DEG2RAD;
+						skew = skewX * _DEG2RAD;
+						rnd = 100000;
+						a11 = Math.cos(angle) * sx;
+						a21 = Math.sin(angle) * sx;
+						a12 = Math.sin(angle - skew) * -sy;
+						a22 = Math.cos(angle - skew) * sy;
+						if (skew && t.skewType === "simple") { //by default, we compensate skewing on the other axis to make it look more natural, but you can set the skewType to "simple" to use the uncompensated skewing that CSS does
+							t1 = Math.tan(skew - skewY * _DEG2RAD);
+							t1 = Math.sqrt(1 + t1 * t1);
+							a12 *= t1;
+							a22 *= t1;
+							if (skewY) {
+								t1 = Math.tan(skewY * _DEG2RAD);
+								t1 = Math.sqrt(1 + t1 * t1);
+								a11 *= t1;
+								a21 *= t1;
+							}
+						}
+						if (isSVG) {
+							x += t.xOrigin - (t.xOrigin * a11 + t.yOrigin * a12) + t.xOffset;
+							y += t.yOrigin - (t.xOrigin * a21 + t.yOrigin * a22) + t.yOffset;
+							if (_useSVGTransformAttr && (t.xPercent || t.yPercent)) { //The SVG spec doesn't support percentage-based translation in the "transform" attribute, so we merge it into the matrix to simulate it.
+								min = this.t.getBBox();
+								x += t.xPercent * 0.01 * min.width;
+								y += t.yPercent * 0.01 * min.height;
+							}
+							min = 0.000001;
+							if (x < min) if (x > -min) {
+								x = 0;
+							}
+							if (y < min) if (y > -min) {
+								y = 0;
+							}
+						}
+						transform = (((a11 * rnd) | 0) / rnd) + "," + (((a21 * rnd) | 0) / rnd) + "," + (((a12 * rnd) | 0) / rnd) + "," + (((a22 * rnd) | 0) / rnd) + "," + x + "," + y + ")";
+						if (isSVG && _useSVGTransformAttr) {
+							this.t.setAttribute("transform", "matrix(" + transform);
+						} else {
+							//some browsers have a hard time with very small values like 2.4492935982947064e-16 (notice the "e-" towards the end) and would render the object slightly off. So we round to 5 decimal places.
+							style[_transformProp] = ((t.xPercent || t.yPercent) ? "translate(" + t.xPercent + "%," + t.yPercent + "%) matrix(" : "matrix(") + transform;
+						}
+					} else {
+						style[_transformProp] = ((t.xPercent || t.yPercent) ? "translate(" + t.xPercent + "%," + t.yPercent + "%) matrix(" : "matrix(") + sx + ",0,0," + sy + "," + x + "," + y + ")";
+					}
+					return;
+
+				}
+				if (_isFirefox) { //Firefox has a bug (at least in v25) that causes it to render the transparent part of 32-bit PNG images as black when displayed inside an iframe and the 3D scale is very small and doesn't change sufficiently enough between renders (like if you use a Power4.easeInOut to scale from 0 to 1 where the beginning values only change a tiny amount to begin the tween before accelerating). In this case, we force the scale to be 0.00002 instead which is visually the same but works around the Firefox issue.
+					min = 0.0001;
+					if (sx < min && sx > -min) {
+						sx = sz = 0.00002;
+					}
+					if (sy < min && sy > -min) {
+						sy = sz = 0.00002;
+					}
+					if (perspective && !t.z && !t.rotationX && !t.rotationY) { //Firefox has a bug that causes elements to have an odd super-thin, broken/dotted black border on elements that have a perspective set but aren't utilizing 3D space (no rotationX, rotationY, or z).
+						perspective = 0;
+					}
+				}
+				if (angle || skewX) {
+					angle *= _DEG2RAD;
+					cos = a11 = Math.cos(angle);
+					sin = a21 = Math.sin(angle);
+					if (skewX) {
+						angle -= skewX * _DEG2RAD;
+						cos = Math.cos(angle);
+						sin = Math.sin(angle);
+						if (t.skewType === "simple") { //by default, we compensate skewing on the other axis to make it look more natural, but you can set the skewType to "simple" to use the uncompensated skewing that CSS does
+							t1 = Math.tan((skewX - skewY) * _DEG2RAD);
+							t1 = Math.sqrt(1 + t1 * t1);
+							cos *= t1;
+							sin *= t1;
+							if (t.skewY) {
+								t1 = Math.tan(skewY * _DEG2RAD);
+								t1 = Math.sqrt(1 + t1 * t1);
+								a11 *= t1;
+								a21 *= t1;
+							}
+						}
+					}
+					a12 = -sin;
+					a22 = cos;
+
+				} else if (!rotationY && !rotationX && sz === 1 && !perspective && !isSVG) { //if we're only translating and/or 2D scaling, this is faster...
+					style[_transformProp] = ((t.xPercent || t.yPercent) ? "translate(" + t.xPercent + "%," + t.yPercent + "%) translate3d(" : "translate3d(") + x + "px," + y + "px," + z +"px)" + ((sx !== 1 || sy !== 1) ? " scale(" + sx + "," + sy + ")" : "");
+					return;
+				} else {
+					a11 = a22 = 1;
+					a12 = a21 = 0;
+				}
+				// KEY  INDEX   AFFECTS a[row][column]
+				// a11  0       rotation, rotationY, scaleX
+				// a21  1       rotation, rotationY, scaleX
+				// a31  2       rotationY, scaleX
+				// a41  3       rotationY, scaleX
+				// a12  4       rotation, skewX, rotationX, scaleY
+				// a22  5       rotation, skewX, rotationX, scaleY
+				// a32  6       rotationX, scaleY
+				// a42  7       rotationX, scaleY
+				// a13  8       rotationY, rotationX, scaleZ
+				// a23  9       rotationY, rotationX, scaleZ
+				// a33  10      rotationY, rotationX, scaleZ
+				// a43  11      rotationY, rotationX, perspective, scaleZ
+				// a14  12      x, zOrigin, svgOrigin
+				// a24  13      y, zOrigin, svgOrigin
+				// a34  14      z, zOrigin
+				// a44  15
+				// rotation: Math.atan2(a21, a11)
+				// rotationY: Math.atan2(a13, a33) (or Math.atan2(a13, a11))
+				// rotationX: Math.atan2(a32, a33)
+				a33 = 1;
+				a13 = a23 = a31 = a32 = a41 = a42 = 0;
+				a43 = (perspective) ? -1 / perspective : 0;
+				zOrigin = t.zOrigin;
+				min = 0.000001; //threshold below which browsers use scientific notation which won't work.
+				comma = ",";
+				zero = "0";
+				angle = rotationY * _DEG2RAD;
+				if (angle) {
+					cos = Math.cos(angle);
+					sin = Math.sin(angle);
+					a31 = -sin;
+					a41 = a43*-sin;
+					a13 = a11*sin;
+					a23 = a21*sin;
+					a33 = cos;
+					a43 *= cos;
+					a11 *= cos;
+					a21 *= cos;
+				}
+				angle = rotationX * _DEG2RAD;
+				if (angle) {
+					cos = Math.cos(angle);
+					sin = Math.sin(angle);
+					t1 = a12*cos+a13*sin;
+					t2 = a22*cos+a23*sin;
+					a32 = a33*sin;
+					a42 = a43*sin;
+					a13 = a12*-sin+a13*cos;
+					a23 = a22*-sin+a23*cos;
+					a33 = a33*cos;
+					a43 = a43*cos;
+					a12 = t1;
+					a22 = t2;
+				}
+				if (sz !== 1) {
+					a13*=sz;
+					a23*=sz;
+					a33*=sz;
+					a43*=sz;
+				}
+				if (sy !== 1) {
+					a12*=sy;
+					a22*=sy;
+					a32*=sy;
+					a42*=sy;
+				}
+				if (sx !== 1) {
+					a11*=sx;
+					a21*=sx;
+					a31*=sx;
+					a41*=sx;
+				}
+
+				if (zOrigin || isSVG) {
+					if (zOrigin) {
+						x += a13*-zOrigin;
+						y += a23*-zOrigin;
+						z += a33*-zOrigin+zOrigin;
+					}
+					if (isSVG) { //due to bugs in some browsers, we need to manage the transform-origin of SVG manually
+						x += t.xOrigin - (t.xOrigin * a11 + t.yOrigin * a12) + t.xOffset;
+						y += t.yOrigin - (t.xOrigin * a21 + t.yOrigin * a22) + t.yOffset;
+					}
+					if (x < min && x > -min) {
+						x = zero;
+					}
+					if (y < min && y > -min) {
+						y = zero;
+					}
+					if (z < min && z > -min) {
+						z = 0; //don't use string because we calculate perspective later and need the number.
+					}
+				}
+
+				//optimized way of concatenating all the values into a string. If we do it all in one shot, it's slower because of the way browsers have to create temp strings and the way it affects memory. If we do it piece-by-piece with +=, it's a bit slower too. We found that doing it in these sized chunks works best overall:
+				transform = ((t.xPercent || t.yPercent) ? "translate(" + t.xPercent + "%," + t.yPercent + "%) matrix3d(" : "matrix3d(");
+				transform += ((a11 < min && a11 > -min) ? zero : a11) + comma + ((a21 < min && a21 > -min) ? zero : a21) + comma + ((a31 < min && a31 > -min) ? zero : a31);
+				transform += comma + ((a41 < min && a41 > -min) ? zero : a41) + comma + ((a12 < min && a12 > -min) ? zero : a12) + comma + ((a22 < min && a22 > -min) ? zero : a22);
+				if (rotationX || rotationY || sz !== 1) { //performance optimization (often there's no rotationX or rotationY, so we can skip these calculations)
+					transform += comma + ((a32 < min && a32 > -min) ? zero : a32) + comma + ((a42 < min && a42 > -min) ? zero : a42) + comma + ((a13 < min && a13 > -min) ? zero : a13);
+					transform += comma + ((a23 < min && a23 > -min) ? zero : a23) + comma + ((a33 < min && a33 > -min) ? zero : a33) + comma + ((a43 < min && a43 > -min) ? zero : a43) + comma;
+				} else {
+					transform += ",0,0,0,0,1,0,";
+				}
+				transform += x + comma + y + comma + z + comma + (perspective ? (1 + (-z / perspective)) : 1) + ")";
+
+				style[_transformProp] = transform;
+			};
+
+		p = Transform.prototype;
+		p.x = p.y = p.z = p.skewX = p.skewY = p.rotation = p.rotationX = p.rotationY = p.zOrigin = p.xPercent = p.yPercent = p.xOffset = p.yOffset = 0;
+		p.scaleX = p.scaleY = p.scaleZ = 1;
+
+		_registerComplexSpecialProp("transform,scale,scaleX,scaleY,scaleZ,x,y,z,rotation,rotationX,rotationY,rotationZ,skewX,skewY,shortRotation,shortRotationX,shortRotationY,shortRotationZ,transformOrigin,svgOrigin,transformPerspective,directionalRotation,parseTransform,force3D,skewType,xPercent,yPercent,smoothOrigin", {parser:function(t, e, parsingProp, cssp, pt, plugin, vars) {
+			if (cssp._lastParsedTransform === vars) { return pt; } //only need to parse the transform once, and only if the browser supports it.
+			cssp._lastParsedTransform = vars;
+			var scaleFunc = (vars.scale && typeof(vars.scale) === "function") ? vars.scale : 0, //if there's a function-based "scale" value, swap in the resulting numeric value temporarily. Otherwise, if it's called for both scaleX and scaleY independently, they may not match (like if the function uses Math.random()).
+				swapFunc;
+			if (typeof(vars[parsingProp]) === "function") { //whatever property triggers the initial parsing might be a function-based value in which case it already got called in parse(), thus we don't want to call it again in here. The most efficient way to avoid this is to temporarily swap the value directly into the vars object, and then after we do all our parsing in this function, we'll swap it back again.
+				swapFunc = vars[parsingProp];
+				vars[parsingProp] = e;
+			}
+			if (scaleFunc) {
+				vars.scale = scaleFunc(_index, t);
+			}
+			var originalGSTransform = t._gsTransform,
+				style = t.style,
+				min = 0.000001,
+				i = _transformProps.length,
+				v = vars,
+				endRotations = {},
+				transformOriginString = "transformOrigin",
+				m1 = _getTransform(t, _cs, true, v.parseTransform),
+				orig = v.transform && ((typeof(v.transform) === "function") ? v.transform(_index, _target) : v.transform),
+				m2, copy, has3D, hasChange, dr, x, y, matrix, p;
+			m1.skewType = v.skewType || m1.skewType || CSSPlugin.defaultSkewType;
+			cssp._transform = m1;
+			if (orig && typeof(orig) === "string" && _transformProp) { //for values like transform:"rotate(60deg) scale(0.5, 0.8)"
+				copy = _tempDiv.style; //don't use the original target because it might be SVG in which case some browsers don't report computed style correctly.
+				copy[_transformProp] = orig;
+				copy.display = "block"; //if display is "none", the browser often refuses to report the transform properties correctly.
+				copy.position = "absolute";
+				_doc.body.appendChild(_tempDiv);
+				m2 = _getTransform(_tempDiv, null, false);
+				if (m1.skewType === "simple") { //the default _getTransform() reports the skewX/scaleY as if skewType is "compensated", thus we need to adjust that here if skewType is "simple".
+					m2.scaleY *= Math.cos(m2.skewX * _DEG2RAD);
+				}
+				if (m1.svg) { //if it's an SVG element, x/y part of the matrix will be affected by whatever we use as the origin and the offsets, so compensate here...
+					x = m1.xOrigin;
+					y = m1.yOrigin;
+					m2.x -= m1.xOffset;
+					m2.y -= m1.yOffset;
+					if (v.transformOrigin || v.svgOrigin) { //if this tween is altering the origin, we must factor that in here. The actual work of recording the transformOrigin values and setting up the PropTween is done later (still inside this function) so we cannot leave the changes intact here - we only want to update the x/y accordingly.
+						orig = {};
+						_parseSVGOrigin(t, _parsePosition(v.transformOrigin), orig, v.svgOrigin, v.smoothOrigin, true);
+						x = orig.xOrigin;
+						y = orig.yOrigin;
+						m2.x -= orig.xOffset - m1.xOffset;
+						m2.y -= orig.yOffset - m1.yOffset;
+					}
+					if (x || y) {
+						matrix = _getMatrix(_tempDiv, true);
+						m2.x -= x - (x * matrix[0] + y * matrix[2]);
+						m2.y -= y - (x * matrix[1] + y * matrix[3]);
+					}
+				}
+				_doc.body.removeChild(_tempDiv);
+				if (!m2.perspective) {
+					m2.perspective = m1.perspective; //tweening to no perspective gives very unintuitive results - just keep the same perspective in that case.
+				}
+				if (v.xPercent != null) {
+					m2.xPercent = _parseVal(v.xPercent, m1.xPercent);
+				}
+				if (v.yPercent != null) {
+					m2.yPercent = _parseVal(v.yPercent, m1.yPercent);
+				}
+			} else if (typeof(v) === "object") { //for values like scaleX, scaleY, rotation, x, y, skewX, and skewY or transform:{...} (object)
+				m2 = {scaleX:_parseVal((v.scaleX != null) ? v.scaleX : v.scale, m1.scaleX),
+					scaleY:_parseVal((v.scaleY != null) ? v.scaleY : v.scale, m1.scaleY),
+					scaleZ:_parseVal(v.scaleZ, m1.scaleZ),
+					x:_parseVal(v.x, m1.x),
+					y:_parseVal(v.y, m1.y),
+					z:_parseVal(v.z, m1.z),
+					xPercent:_parseVal(v.xPercent, m1.xPercent),
+					yPercent:_parseVal(v.yPercent, m1.yPercent),
+					perspective:_parseVal(v.transformPerspective, m1.perspective)};
+				dr = v.directionalRotation;
+				if (dr != null) {
+					if (typeof(dr) === "object") {
+						for (copy in dr) {
+							v[copy] = dr[copy];
+						}
+					} else {
+						v.rotation = dr;
+					}
+				}
+				if (typeof(v.x) === "string" && v.x.indexOf("%") !== -1) {
+					m2.x = 0;
+					m2.xPercent = _parseVal(v.x, m1.xPercent);
+				}
+				if (typeof(v.y) === "string" && v.y.indexOf("%") !== -1) {
+					m2.y = 0;
+					m2.yPercent = _parseVal(v.y, m1.yPercent);
+				}
+
+				m2.rotation = _parseAngle(("rotation" in v) ? v.rotation : ("shortRotation" in v) ? v.shortRotation + "_short" : ("rotationZ" in v) ? v.rotationZ : m1.rotation, m1.rotation, "rotation", endRotations);
+				if (_supports3D) {
+					m2.rotationX = _parseAngle(("rotationX" in v) ? v.rotationX : ("shortRotationX" in v) ? v.shortRotationX + "_short" : m1.rotationX || 0, m1.rotationX, "rotationX", endRotations);
+					m2.rotationY = _parseAngle(("rotationY" in v) ? v.rotationY : ("shortRotationY" in v) ? v.shortRotationY + "_short" : m1.rotationY || 0, m1.rotationY, "rotationY", endRotations);
+				}
+				m2.skewX = _parseAngle(v.skewX, m1.skewX);
+				m2.skewY = _parseAngle(v.skewY, m1.skewY);
+			}
+			if (_supports3D && v.force3D != null) {
+				m1.force3D = v.force3D;
+				hasChange = true;
+			}
+
+			has3D = (m1.force3D || m1.z || m1.rotationX || m1.rotationY || m2.z || m2.rotationX || m2.rotationY || m2.perspective);
+			if (!has3D && v.scale != null) {
+				m2.scaleZ = 1; //no need to tween scaleZ.
+			}
+
+			while (--i > -1) {
+				p = _transformProps[i];
+				orig = m2[p] - m1[p];
+				if (orig > min || orig < -min || v[p] != null || _forcePT[p] != null) {
+					hasChange = true;
+					pt = new CSSPropTween(m1, p, m1[p], orig, pt);
+					if (p in endRotations) {
+						pt.e = endRotations[p]; //directional rotations typically have compensated values during the tween, but we need to make sure they end at exactly what the user requested
+					}
+					pt.xs0 = 0; //ensures the value stays numeric in setRatio()
+					pt.plugin = plugin;
+					cssp._overwriteProps.push(pt.n);
+				}
+			}
+
+			orig = v.transformOrigin;
+			if (m1.svg && (orig || v.svgOrigin)) {
+				x = m1.xOffset; //when we change the origin, in order to prevent things from jumping we adjust the x/y so we must record those here so that we can create PropTweens for them and flip them at the same time as the origin
+				y = m1.yOffset;
+				_parseSVGOrigin(t, _parsePosition(orig), m2, v.svgOrigin, v.smoothOrigin);
+				pt = _addNonTweeningNumericPT(m1, "xOrigin", (originalGSTransform ? m1 : m2).xOrigin, m2.xOrigin, pt, transformOriginString); //note: if there wasn't a transformOrigin defined yet, just start with the destination one; it's wasteful otherwise, and it causes problems with fromTo() tweens. For example, TweenLite.to("#wheel", 3, {rotation:180, transformOrigin:"50% 50%", delay:1}); TweenLite.fromTo("#wheel", 3, {scale:0.5, transformOrigin:"50% 50%"}, {scale:1, delay:2}); would cause a jump when the from values revert at the beginning of the 2nd tween.
+				pt = _addNonTweeningNumericPT(m1, "yOrigin", (originalGSTransform ? m1 : m2).yOrigin, m2.yOrigin, pt, transformOriginString);
+				if (x !== m1.xOffset || y !== m1.yOffset) {
+					pt = _addNonTweeningNumericPT(m1, "xOffset", (originalGSTransform ? x : m1.xOffset), m1.xOffset, pt, transformOriginString);
+					pt = _addNonTweeningNumericPT(m1, "yOffset", (originalGSTransform ? y : m1.yOffset), m1.yOffset, pt, transformOriginString);
+				}
+				orig = "0px 0px"; //certain browsers (like firefox) completely botch transform-origin, so we must remove it to prevent it from contaminating transforms. We manage it ourselves with xOrigin and yOrigin
+			}
+			if (orig || (_supports3D && has3D && m1.zOrigin)) { //if anything 3D is happening and there's a transformOrigin with a z component that's non-zero, we must ensure that the transformOrigin's z-component is set to 0 so that we can manually do those calculations to get around Safari bugs. Even if the user didn't specifically define a "transformOrigin" in this particular tween (maybe they did it via css directly).
+				if (_transformProp) {
+					hasChange = true;
+					p = _transformOriginProp;
+					orig = (orig || _getStyle(t, p, _cs, false, "50% 50%")) + ""; //cast as string to avoid errors
+					pt = new CSSPropTween(style, p, 0, 0, pt, -1, transformOriginString);
+					pt.b = style[p];
+					pt.plugin = plugin;
+					if (_supports3D) {
+						copy = m1.zOrigin;
+						orig = orig.split(" ");
+						m1.zOrigin = ((orig.length > 2 && !(copy !== 0 && orig[2] === "0px")) ? parseFloat(orig[2]) : copy) || 0; //Safari doesn't handle the z part of transformOrigin correctly, so we'll manually handle it in the _set3DTransformRatio() method.
+						pt.xs0 = pt.e = orig[0] + " " + (orig[1] || "50%") + " 0px"; //we must define a z value of 0px specifically otherwise iOS 5 Safari will stick with the old one (if one was defined)!
+						pt = new CSSPropTween(m1, "zOrigin", 0, 0, pt, -1, pt.n); //we must create a CSSPropTween for the _gsTransform.zOrigin so that it gets reset properly at the beginning if the tween runs backward (as opposed to just setting m1.zOrigin here)
+						pt.b = copy;
+						pt.xs0 = pt.e = m1.zOrigin;
+					} else {
+						pt.xs0 = pt.e = orig;
+					}
+
+					//for older versions of IE (6-8), we need to manually calculate things inside the setRatio() function. We record origin x and y (ox and oy) and whether or not the values are percentages (oxp and oyp).
+				} else {
+					_parsePosition(orig + "", m1);
+				}
+			}
+			if (hasChange) {
+				cssp._transformType = (!(m1.svg && _useSVGTransformAttr) && (has3D || this._transformType === 3)) ? 3 : 2; //quicker than calling cssp._enableTransforms();
+			}
+			if (swapFunc) {
+				vars[parsingProp] = swapFunc;
+			}
+			if (scaleFunc) {
+				vars.scale = scaleFunc;
+			}
+			return pt;
+		}, prefix:true});
+
+		_registerComplexSpecialProp("boxShadow", {defaultValue:"0px 0px 0px 0px #999", prefix:true, color:true, multi:true, keyword:"inset"});
+
+		_registerComplexSpecialProp("borderRadius", {defaultValue:"0px", parser:function(t, e, p, cssp, pt, plugin) {
+			e = this.format(e);
+			var props = ["borderTopLeftRadius","borderTopRightRadius","borderBottomRightRadius","borderBottomLeftRadius"],
+				style = t.style,
+				ea1, i, es2, bs2, bs, es, bn, en, w, h, esfx, bsfx, rel, hn, vn, em;
+			w = parseFloat(t.offsetWidth);
+			h = parseFloat(t.offsetHeight);
+			ea1 = e.split(" ");
+			for (i = 0; i < props.length; i++) { //if we're dealing with percentages, we must convert things separately for the horizontal and vertical axis!
+				if (this.p.indexOf("border")) { //older browsers used a prefix
+					props[i] = _checkPropPrefix(props[i]);
+				}
+				bs = bs2 = _getStyle(t, props[i], _cs, false, "0px");
+				if (bs.indexOf(" ") !== -1) {
+					bs2 = bs.split(" ");
+					bs = bs2[0];
+					bs2 = bs2[1];
+				}
+				es = es2 = ea1[i];
+				bn = parseFloat(bs);
+				bsfx = bs.substr((bn + "").length);
+				rel = (es.charAt(1) === "=");
+				if (rel) {
+					en = parseInt(es.charAt(0)+"1", 10);
+					es = es.substr(2);
+					en *= parseFloat(es);
+					esfx = es.substr((en + "").length - (en < 0 ? 1 : 0)) || "";
+				} else {
+					en = parseFloat(es);
+					esfx = es.substr((en + "").length);
+				}
+				if (esfx === "") {
+					esfx = _suffixMap[p] || bsfx;
+				}
+				if (esfx !== bsfx) {
+					hn = _convertToPixels(t, "borderLeft", bn, bsfx); //horizontal number (we use a bogus "borderLeft" property just because the _convertToPixels() method searches for the keywords "Left", "Right", "Top", and "Bottom" to determine of it's a horizontal or vertical property, and we need "border" in the name so that it knows it should measure relative to the element itself, not its parent.
+					vn = _convertToPixels(t, "borderTop", bn, bsfx); //vertical number
+					if (esfx === "%") {
+						bs = (hn / w * 100) + "%";
+						bs2 = (vn / h * 100) + "%";
+					} else if (esfx === "em") {
+						em = _convertToPixels(t, "borderLeft", 1, "em");
+						bs = (hn / em) + "em";
+						bs2 = (vn / em) + "em";
+					} else {
+						bs = hn + "px";
+						bs2 = vn + "px";
+					}
+					if (rel) {
+						es = (parseFloat(bs) + en) + esfx;
+						es2 = (parseFloat(bs2) + en) + esfx;
+					}
+				}
+				pt = _parseComplex(style, props[i], bs + " " + bs2, es + " " + es2, false, "0px", pt);
+			}
+			return pt;
+		}, prefix:true, formatter:_getFormatter("0px 0px 0px 0px", false, true)});
+		_registerComplexSpecialProp("borderBottomLeftRadius,borderBottomRightRadius,borderTopLeftRadius,borderTopRightRadius", {defaultValue:"0px", parser:function(t, e, p, cssp, pt, plugin) {
+			return _parseComplex(t.style, p, this.format(_getStyle(t, p, _cs, false, "0px 0px")), this.format(e), false, "0px", pt);
+		}, prefix:true, formatter:_getFormatter("0px 0px", false, true)});
+		_registerComplexSpecialProp("backgroundPosition", {defaultValue:"0 0", parser:function(t, e, p, cssp, pt, plugin) {
+			var bp = "background-position",
+				cs = (_cs || _getComputedStyle(t, null)),
+				bs = this.format( ((cs) ? _ieVers ? cs.getPropertyValue(bp + "-x") + " " + cs.getPropertyValue(bp + "-y") : cs.getPropertyValue(bp) : t.currentStyle.backgroundPositionX + " " + t.currentStyle.backgroundPositionY) || "0 0"), //Internet Explorer doesn't report background-position correctly - we must query background-position-x and background-position-y and combine them (even in IE10). Before IE9, we must do the same with the currentStyle object and use camelCase
+				es = this.format(e),
+				ba, ea, i, pct, overlap, src;
+			if ((bs.indexOf("%") !== -1) !== (es.indexOf("%") !== -1) && es.split(",").length < 2) {
+				src = _getStyle(t, "backgroundImage").replace(_urlExp, "");
+				if (src && src !== "none") {
+					ba = bs.split(" ");
+					ea = es.split(" ");
+					_tempImg.setAttribute("src", src); //set the temp IMG's src to the background-image so that we can measure its width/height
+					i = 2;
+					while (--i > -1) {
+						bs = ba[i];
+						pct = (bs.indexOf("%") !== -1);
+						if (pct !== (ea[i].indexOf("%") !== -1)) {
+							overlap = (i === 0) ? t.offsetWidth - _tempImg.width : t.offsetHeight - _tempImg.height;
+							ba[i] = pct ? (parseFloat(bs) / 100 * overlap) + "px" : (parseFloat(bs) / overlap * 100) + "%";
+						}
+					}
+					bs = ba.join(" ");
+				}
+			}
+			return this.parseComplex(t.style, bs, es, pt, plugin);
+		}, formatter:_parsePosition});
+		_registerComplexSpecialProp("backgroundSize", {defaultValue:"0 0", formatter:function(v) {
+			v += ""; //ensure it's a string
+			return _parsePosition(v.indexOf(" ") === -1 ? v + " " + v : v); //if set to something like "100% 100%", Safari typically reports the computed style as just "100%" (no 2nd value), but we should ensure that there are two values, so copy the first one. Otherwise, it'd be interpreted as "100% 0" (wrong).
+		}});
+		_registerComplexSpecialProp("perspective", {defaultValue:"0px", prefix:true});
+		_registerComplexSpecialProp("perspectiveOrigin", {defaultValue:"50% 50%", prefix:true});
+		_registerComplexSpecialProp("transformStyle", {prefix:true});
+		_registerComplexSpecialProp("backfaceVisibility", {prefix:true});
+		_registerComplexSpecialProp("userSelect", {prefix:true});
+		_registerComplexSpecialProp("margin", {parser:_getEdgeParser("marginTop,marginRight,marginBottom,marginLeft")});
+		_registerComplexSpecialProp("padding", {parser:_getEdgeParser("paddingTop,paddingRight,paddingBottom,paddingLeft")});
+		_registerComplexSpecialProp("clip", {defaultValue:"rect(0px,0px,0px,0px)", parser:function(t, e, p, cssp, pt, plugin){
+			var b, cs, delim;
+			if (_ieVers < 9) { //IE8 and earlier don't report a "clip" value in the currentStyle - instead, the values are split apart into clipTop, clipRight, clipBottom, and clipLeft. Also, in IE7 and earlier, the values inside rect() are space-delimited, not comma-delimited.
+				cs = t.currentStyle;
+				delim = _ieVers < 8 ? " " : ",";
+				b = "rect(" + cs.clipTop + delim + cs.clipRight + delim + cs.clipBottom + delim + cs.clipLeft + ")";
+				e = this.format(e).split(",").join(delim);
+			} else {
+				b = this.format(_getStyle(t, this.p, _cs, false, this.dflt));
+				e = this.format(e);
+			}
+			return this.parseComplex(t.style, b, e, pt, plugin);
+		}});
+		_registerComplexSpecialProp("textShadow", {defaultValue:"0px 0px 0px #999", color:true, multi:true});
+		_registerComplexSpecialProp("autoRound,strictUnits", {parser:function(t, e, p, cssp, pt) {return pt;}}); //just so that we can ignore these properties (not tween them)
+		_registerComplexSpecialProp("border", {defaultValue:"0px solid #000", parser:function(t, e, p, cssp, pt, plugin) {
+			var bw = _getStyle(t, "borderTopWidth", _cs, false, "0px"),
+				end = this.format(e).split(" "),
+				esfx = end[0].replace(_suffixExp, "");
+			if (esfx !== "px") { //if we're animating to a non-px value, we need to convert the beginning width to that unit.
+				bw = (parseFloat(bw) / _convertToPixels(t, "borderTopWidth", 1, esfx)) + esfx;
+			}
+			return this.parseComplex(t.style, this.format(bw + " " + _getStyle(t, "borderTopStyle", _cs, false, "solid") + " " + _getStyle(t, "borderTopColor", _cs, false, "#000")), end.join(" "), pt, plugin);
+			}, color:true, formatter:function(v) {
+				var a = v.split(" ");
+				return a[0] + " " + (a[1] || "solid") + " " + (v.match(_colorExp) || ["#000"])[0];
+			}});
+		_registerComplexSpecialProp("borderWidth", {parser:_getEdgeParser("borderTopWidth,borderRightWidth,borderBottomWidth,borderLeftWidth")}); //Firefox doesn't pick up on borderWidth set in style sheets (only inline).
+		_registerComplexSpecialProp("float,cssFloat,styleFloat", {parser:function(t, e, p, cssp, pt, plugin) {
+			var s = t.style,
+				prop = ("cssFloat" in s) ? "cssFloat" : "styleFloat";
+			return new CSSPropTween(s, prop, 0, 0, pt, -1, p, false, 0, s[prop], e);
+		}});
+
+		//opacity-related
+		var _setIEOpacityRatio = function(v) {
+				var t = this.t, //refers to the element's style property
+					filters = t.filter || _getStyle(this.data, "filter") || "",
+					val = (this.s + this.c * v) | 0,
+					skip;
+				if (val === 100) { //for older versions of IE that need to use a filter to apply opacity, we should remove the filter if opacity hits 1 in order to improve performance, but make sure there isn't a transform (matrix) or gradient in the filters.
+					if (filters.indexOf("atrix(") === -1 && filters.indexOf("radient(") === -1 && filters.indexOf("oader(") === -1) {
+						t.removeAttribute("filter");
+						skip = (!_getStyle(this.data, "filter")); //if a class is applied that has an alpha filter, it will take effect (we don't want that), so re-apply our alpha filter in that case. We must first remove it and then check.
+					} else {
+						t.filter = filters.replace(_alphaFilterExp, "");
+						skip = true;
+					}
+				}
+				if (!skip) {
+					if (this.xn1) {
+						t.filter = filters = filters || ("alpha(opacity=" + val + ")"); //works around bug in IE7/8 that prevents changes to "visibility" from being applied properly if the filter is changed to a different alpha on the same frame.
+					}
+					if (filters.indexOf("pacity") === -1) { //only used if browser doesn't support the standard opacity style property (IE 7 and 8). We omit the "O" to avoid case-sensitivity issues
+						if (val !== 0 || !this.xn1) { //bugs in IE7/8 won't render the filter properly if opacity is ADDED on the same frame/render as "visibility" changes (this.xn1 is 1 if this tween is an "autoAlpha" tween)
+							t.filter = filters + " alpha(opacity=" + val + ")"; //we round the value because otherwise, bugs in IE7/8 can prevent "visibility" changes from being applied properly.
+						}
+					} else {
+						t.filter = filters.replace(_opacityExp, "opacity=" + val);
+					}
+				}
+			};
+		_registerComplexSpecialProp("opacity,alpha,autoAlpha", {defaultValue:"1", parser:function(t, e, p, cssp, pt, plugin) {
+			var b = parseFloat(_getStyle(t, "opacity", _cs, false, "1")),
+				style = t.style,
+				isAutoAlpha = (p === "autoAlpha");
+			if (typeof(e) === "string" && e.charAt(1) === "=") {
+				e = ((e.charAt(0) === "-") ? -1 : 1) * parseFloat(e.substr(2)) + b;
+			}
+			if (isAutoAlpha && b === 1 && _getStyle(t, "visibility", _cs) === "hidden" && e !== 0) { //if visibility is initially set to "hidden", we should interpret that as intent to make opacity 0 (a convenience)
+				b = 0;
+			}
+			if (_supportsOpacity) {
+				pt = new CSSPropTween(style, "opacity", b, e - b, pt);
+			} else {
+				pt = new CSSPropTween(style, "opacity", b * 100, (e - b) * 100, pt);
+				pt.xn1 = isAutoAlpha ? 1 : 0; //we need to record whether or not this is an autoAlpha so that in the setRatio(), we know to duplicate the setting of the alpha in order to work around a bug in IE7 and IE8 that prevents changes to "visibility" from taking effect if the filter is changed to a different alpha(opacity) at the same time. Setting it to the SAME value first, then the new value works around the IE7/8 bug.
+				style.zoom = 1; //helps correct an IE issue.
+				pt.type = 2;
+				pt.b = "alpha(opacity=" + pt.s + ")";
+				pt.e = "alpha(opacity=" + (pt.s + pt.c) + ")";
+				pt.data = t;
+				pt.plugin = plugin;
+				pt.setRatio = _setIEOpacityRatio;
+			}
+			if (isAutoAlpha) { //we have to create the "visibility" PropTween after the opacity one in the linked list so that they run in the order that works properly in IE8 and earlier
+				pt = new CSSPropTween(style, "visibility", 0, 0, pt, -1, null, false, 0, ((b !== 0) ? "inherit" : "hidden"), ((e === 0) ? "hidden" : "inherit"));
+				pt.xs0 = "inherit";
+				cssp._overwriteProps.push(pt.n);
+				cssp._overwriteProps.push(p);
+			}
+			return pt;
+		}});
+
+
+		var _removeProp = function(s, p) {
+				if (p) {
+					if (s.removeProperty) {
+						if (p.substr(0,2) === "ms" || p.substr(0,6) === "webkit") { //Microsoft and some Webkit browsers don't conform to the standard of capitalizing the first prefix character, so we adjust so that when we prefix the caps with a dash, it's correct (otherwise it'd be "ms-transform" instead of "-ms-transform" for IE9, for example)
+							p = "-" + p;
+						}
+						s.removeProperty(p.replace(_capsExp, "-$1").toLowerCase());
+					} else { //note: old versions of IE use "removeAttribute()" instead of "removeProperty()"
+						s.removeAttribute(p);
+					}
+				}
+			},
+			_setClassNameRatio = function(v) {
+				this.t._gsClassPT = this;
+				if (v === 1 || v === 0) {
+					this.t.setAttribute("class", (v === 0) ? this.b : this.e);
+					var mpt = this.data, //first MiniPropTween
+						s = this.t.style;
+					while (mpt) {
+						if (!mpt.v) {
+							_removeProp(s, mpt.p);
+						} else {
+							s[mpt.p] = mpt.v;
+						}
+						mpt = mpt._next;
+					}
+					if (v === 1 && this.t._gsClassPT === this) {
+						this.t._gsClassPT = null;
+					}
+				} else if (this.t.getAttribute("class") !== this.e) {
+					this.t.setAttribute("class", this.e);
+				}
+			};
+		_registerComplexSpecialProp("className", {parser:function(t, e, p, cssp, pt, plugin, vars) {
+			var b = t.getAttribute("class") || "", //don't use t.className because it doesn't work consistently on SVG elements; getAttribute("class") and setAttribute("class", value") is more reliable.
+				cssText = t.style.cssText,
+				difData, bs, cnpt, cnptLookup, mpt;
+			pt = cssp._classNamePT = new CSSPropTween(t, p, 0, 0, pt, 2);
+			pt.setRatio = _setClassNameRatio;
+			pt.pr = -11;
+			_hasPriority = true;
+			pt.b = b;
+			bs = _getAllStyles(t, _cs);
+			//if there's a className tween already operating on the target, force it to its end so that the necessary inline styles are removed and the class name is applied before we determine the end state (we don't want inline styles interfering that were there just for class-specific values)
+			cnpt = t._gsClassPT;
+			if (cnpt) {
+				cnptLookup = {};
+				mpt = cnpt.data; //first MiniPropTween which stores the inline styles - we need to force these so that the inline styles don't contaminate things. Otherwise, there's a small chance that a tween could start and the inline values match the destination values and they never get cleaned.
+				while (mpt) {
+					cnptLookup[mpt.p] = 1;
+					mpt = mpt._next;
+				}
+				cnpt.setRatio(1);
+			}
+			t._gsClassPT = pt;
+			pt.e = (e.charAt(1) !== "=") ? e : b.replace(new RegExp("(?:\\s|^)" + e.substr(2) + "(?![\\w-])"), "") + ((e.charAt(0) === "+") ? " " + e.substr(2) : "");
+			t.setAttribute("class", pt.e);
+			difData = _cssDif(t, bs, _getAllStyles(t), vars, cnptLookup);
+			t.setAttribute("class", b);
+			pt.data = difData.firstMPT;
+			t.style.cssText = cssText; //we recorded cssText before we swapped classes and ran _getAllStyles() because in cases when a className tween is overwritten, we remove all the related tweening properties from that class change (otherwise class-specific stuff can't override properties we've directly set on the target's style object due to specificity).
+			pt = pt.xfirst = cssp.parse(t, difData.difs, pt, plugin); //we record the CSSPropTween as the xfirst so that we can handle overwriting propertly (if "className" gets overwritten, we must kill all the properties associated with the className part of the tween, so we can loop through from xfirst to the pt itself)
+			return pt;
+		}});
+
+
+		var _setClearPropsRatio = function(v) {
+			if (v === 1 || v === 0) if (this.data._totalTime === this.data._totalDuration && this.data.data !== "isFromStart") { //this.data refers to the tween. Only clear at the END of the tween (remember, from() tweens make the ratio go from 1 to 0, so we can't just check that and if the tween is the zero-duration one that's created internally to render the starting values in a from() tween, ignore that because otherwise, for example, from(...{height:100, clearProps:"height", delay:1}) would wipe the height at the beginning of the tween and after 1 second, it'd kick back in).
+				var s = this.t.style,
+					transformParse = _specialProps.transform.parse,
+					a, p, i, clearTransform, transform;
+				if (this.e === "all") {
+					s.cssText = "";
+					clearTransform = true;
+				} else {
+					a = this.e.split(" ").join("").split(",");
+					i = a.length;
+					while (--i > -1) {
+						p = a[i];
+						if (_specialProps[p]) {
+							if (_specialProps[p].parse === transformParse) {
+								clearTransform = true;
+							} else {
+								p = (p === "transformOrigin") ? _transformOriginProp : _specialProps[p].p; //ensures that special properties use the proper browser-specific property name, like "scaleX" might be "-webkit-transform" or "boxShadow" might be "-moz-box-shadow"
+							}
+						}
+						_removeProp(s, p);
+					}
+				}
+				if (clearTransform) {
+					_removeProp(s, _transformProp);
+					transform = this.t._gsTransform;
+					if (transform) {
+						if (transform.svg) {
+							this.t.removeAttribute("data-svg-origin");
+							this.t.removeAttribute("transform");
+						}
+						delete this.t._gsTransform;
+					}
+				}
+
+			}
+		};
+		_registerComplexSpecialProp("clearProps", {parser:function(t, e, p, cssp, pt) {
+			pt = new CSSPropTween(t, p, 0, 0, pt, 2);
+			pt.setRatio = _setClearPropsRatio;
+			pt.e = e;
+			pt.pr = -10;
+			pt.data = cssp._tween;
+			_hasPriority = true;
+			return pt;
+		}});
+
+		p = "bezier,throwProps,physicsProps,physics2D".split(",");
+		i = p.length;
+		while (i--) {
+			_registerPluginProp(p[i]);
+		}
+
+
+
+
+
+
+
+
+		p = CSSPlugin.prototype;
+		p._firstPT = p._lastParsedTransform = p._transform = null;
+
+		//gets called when the tween renders for the first time. This kicks everything off, recording start/end values, etc.
+		p._onInitTween = function(target, vars, tween, index) {
+			if (!target.nodeType) { //css is only for dom elements
+				return false;
+			}
+			this._target = _target = target;
+			this._tween = tween;
+			this._vars = vars;
+			_index = index;
+			_autoRound = vars.autoRound;
+			_hasPriority = false;
+			_suffixMap = vars.suffixMap || CSSPlugin.suffixMap;
+			_cs = _getComputedStyle(target, "");
+			_overwriteProps = this._overwriteProps;
+			var style = target.style,
+				v, pt, pt2, first, last, next, zIndex, tpt, threeD;
+			if (_reqSafariFix) if (style.zIndex === "") {
+				v = _getStyle(target, "zIndex", _cs);
+				if (v === "auto" || v === "") {
+					//corrects a bug in [non-Android] Safari that prevents it from repainting elements in their new positions if they don't have a zIndex set. We also can't just apply this inside _parseTransform() because anything that's moved in any way (like using "left" or "top" instead of transforms like "x" and "y") can be affected, so it is best to ensure that anything that's tweening has a z-index. Setting "WebkitPerspective" to a non-zero value worked too except that on iOS Safari things would flicker randomly. Plus zIndex is less memory-intensive.
+					this._addLazySet(style, "zIndex", 0);
+				}
+			}
+
+			if (typeof(vars) === "string") {
+				first = style.cssText;
+				v = _getAllStyles(target, _cs);
+				style.cssText = first + ";" + vars;
+				v = _cssDif(target, v, _getAllStyles(target)).difs;
+				if (!_supportsOpacity && _opacityValExp.test(vars)) {
+					v.opacity = parseFloat( RegExp.$1 );
+				}
+				vars = v;
+				style.cssText = first;
+			}
+
+			if (vars.className) { //className tweens will combine any differences they find in the css with the vars that are passed in, so {className:"myClass", scale:0.5, left:20} would work.
+				this._firstPT = pt = _specialProps.className.parse(target, vars.className, "className", this, null, null, vars);
+			} else {
+				this._firstPT = pt = this.parse(target, vars, null);
+			}
+
+			if (this._transformType) {
+				threeD = (this._transformType === 3);
+				if (!_transformProp) {
+					style.zoom = 1; //helps correct an IE issue.
+				} else if (_isSafari) {
+					_reqSafariFix = true;
+					//if zIndex isn't set, iOS Safari doesn't repaint things correctly sometimes (seemingly at random).
+					if (style.zIndex === "") {
+						zIndex = _getStyle(target, "zIndex", _cs);
+						if (zIndex === "auto" || zIndex === "") {
+							this._addLazySet(style, "zIndex", 0);
+						}
+					}
+					//Setting WebkitBackfaceVisibility corrects 3 bugs:
+					// 1) [non-Android] Safari skips rendering changes to "top" and "left" that are made on the same frame/render as a transform update.
+					// 2) iOS Safari sometimes neglects to repaint elements in their new positions. Setting "WebkitPerspective" to a non-zero value worked too except that on iOS Safari things would flicker randomly.
+					// 3) Safari sometimes displayed odd artifacts when tweening the transform (or WebkitTransform) property, like ghosts of the edges of the element remained. Definitely a browser bug.
+					//Note: we allow the user to override the auto-setting by defining WebkitBackfaceVisibility in the vars of the tween.
+					if (_isSafariLT6) {
+						this._addLazySet(style, "WebkitBackfaceVisibility", this._vars.WebkitBackfaceVisibility || (threeD ? "visible" : "hidden"));
+					}
+				}
+				pt2 = pt;
+				while (pt2 && pt2._next) {
+					pt2 = pt2._next;
+				}
+				tpt = new CSSPropTween(target, "transform", 0, 0, null, 2);
+				this._linkCSSP(tpt, null, pt2);
+				tpt.setRatio = _transformProp ? _setTransformRatio : _setIETransformRatio;
+				tpt.data = this._transform || _getTransform(target, _cs, true);
+				tpt.tween = tween;
+				tpt.pr = -1; //ensures that the transforms get applied after the components are updated.
+				_overwriteProps.pop(); //we don't want to force the overwrite of all "transform" tweens of the target - we only care about individual transform properties like scaleX, rotation, etc. The CSSPropTween constructor automatically adds the property to _overwriteProps which is why we need to pop() here.
+			}
+
+			if (_hasPriority) {
+				//reorders the linked list in order of pr (priority)
+				while (pt) {
+					next = pt._next;
+					pt2 = first;
+					while (pt2 && pt2.pr > pt.pr) {
+						pt2 = pt2._next;
+					}
+					if ((pt._prev = pt2 ? pt2._prev : last)) {
+						pt._prev._next = pt;
+					} else {
+						first = pt;
+					}
+					if ((pt._next = pt2)) {
+						pt2._prev = pt;
+					} else {
+						last = pt;
+					}
+					pt = next;
+				}
+				this._firstPT = first;
+			}
+			return true;
+		};
+
+
+		p.parse = function(target, vars, pt, plugin) {
+			var style = target.style,
+				p, sp, bn, en, bs, es, bsfx, esfx, isStr, rel;
+			for (p in vars) {
+				es = vars[p]; //ending value string
+				if (typeof(es) === "function") {
+					es = es(_index, _target);
+				}
+				sp = _specialProps[p]; //SpecialProp lookup.
+				if (sp) {
+					pt = sp.parse(target, es, p, this, pt, plugin, vars);
+				} else if (p.substr(0,2) === "--") { //for tweening CSS variables (which always start with "--"). To maximize performance and simplicity, we bypass CSSPlugin altogether and just add a normal property tween to the tween instance itself.
+					this._tween._propLookup[p] = this._addTween.call(this._tween, target.style, "setProperty", _getComputedStyle(target).getPropertyValue(p) + "", es + "", p, false, p);
+					continue;
+				} else {
+					bs = _getStyle(target, p, _cs) + "";
+					isStr = (typeof(es) === "string");
+					if (p === "color" || p === "fill" || p === "stroke" || p.indexOf("Color") !== -1 || (isStr && _rgbhslExp.test(es))) { //Opera uses background: to define color sometimes in addition to backgroundColor:
+						if (!isStr) {
+							es = _parseColor(es);
+							es = ((es.length > 3) ? "rgba(" : "rgb(") + es.join(",") + ")";
+						}
+						pt = _parseComplex(style, p, bs, es, true, "transparent", pt, 0, plugin);
+
+					} else if (isStr && _complexExp.test(es)) {
+						pt = _parseComplex(style, p, bs, es, true, null, pt, 0, plugin);
+
+					} else {
+						bn = parseFloat(bs);
+						bsfx = (bn || bn === 0) ? bs.substr((bn + "").length) : ""; //remember, bs could be non-numeric like "normal" for fontWeight, so we should default to a blank suffix in that case.
+
+						if (bs === "" || bs === "auto") {
+							if (p === "width" || p === "height") {
+								bn = _getDimension(target, p, _cs);
+								bsfx = "px";
+							} else if (p === "left" || p === "top") {
+								bn = _calculateOffset(target, p, _cs);
+								bsfx = "px";
+							} else {
+								bn = (p !== "opacity") ? 0 : 1;
+								bsfx = "";
+							}
+						}
+
+						rel = (isStr && es.charAt(1) === "=");
+						if (rel) {
+							en = parseInt(es.charAt(0) + "1", 10);
+							es = es.substr(2);
+							en *= parseFloat(es);
+							esfx = es.replace(_suffixExp, "");
+						} else {
+							en = parseFloat(es);
+							esfx = isStr ? es.replace(_suffixExp, "") : "";
+						}
+
+						if (esfx === "") {
+							esfx = (p in _suffixMap) ? _suffixMap[p] : bsfx; //populate the end suffix, prioritizing the map, then if none is found, use the beginning suffix.
+						}
+
+						es = (en || en === 0) ? (rel ? en + bn : en) + esfx : vars[p]; //ensures that any += or -= prefixes are taken care of. Record the end value before normalizing the suffix because we always want to end the tween on exactly what they intended even if it doesn't match the beginning value's suffix.
+						//if the beginning/ending suffixes don't match, normalize them...
+						if (bsfx !== esfx) if (esfx !== "" || p === "lineHeight") if (en || en === 0) if (bn) { //note: if the beginning value (bn) is 0, we don't need to convert units!
+							bn = _convertToPixels(target, p, bn, bsfx);
+							if (esfx === "%") {
+								bn /= _convertToPixels(target, p, 100, "%") / 100;
+								if (vars.strictUnits !== true) { //some browsers report only "px" values instead of allowing "%" with getComputedStyle(), so we assume that if we're tweening to a %, we should start there too unless strictUnits:true is defined. This approach is particularly useful for responsive designs that use from() tweens.
+									bs = bn + "%";
+								}
+
+							} else if (esfx === "em" || esfx === "rem" || esfx === "vw" || esfx === "vh") {
+								bn /= _convertToPixels(target, p, 1, esfx);
+
+							//otherwise convert to pixels.
+							} else if (esfx !== "px") {
+								en = _convertToPixels(target, p, en, esfx);
+								esfx = "px"; //we don't use bsfx after this, so we don't need to set it to px too.
+							}
+							if (rel) if (en || en === 0) {
+								es = (en + bn) + esfx; //the changes we made affect relative calculations, so adjust the end value here.
+							}
+						}
+
+						if (rel) {
+							en += bn;
+						}
+
+						if ((bn || bn === 0) && (en || en === 0)) { //faster than isNaN(). Also, previously we required en !== bn but that doesn't really gain much performance and it prevents _parseToProxy() from working properly if beginning and ending values match but need to get tweened by an external plugin anyway. For example, a bezier tween where the target starts at left:0 and has these points: [{left:50},{left:0}] wouldn't work properly because when parsing the last point, it'd match the first (current) one and a non-tweening CSSPropTween would be recorded when we actually need a normal tween (type:0) so that things get updated during the tween properly.
+							pt = new CSSPropTween(style, p, bn, en - bn, pt, 0, p, (_autoRound !== false && (esfx === "px" || p === "zIndex")), 0, bs, es);
+							pt.xs0 = esfx;
+							//DEBUG: _log("tween "+p+" from "+pt.b+" ("+bn+esfx+") to "+pt.e+" with suffix: "+pt.xs0);
+						} else if (style[p] === undefined || !es && (es + "" === "NaN" || es == null)) {
+							_log("invalid " + p + " tween value: " + vars[p]);
+						} else {
+							pt = new CSSPropTween(style, p, en || bn || 0, 0, pt, -1, p, false, 0, bs, es);
+							pt.xs0 = (es === "none" && (p === "display" || p.indexOf("Style") !== -1)) ? bs : es; //intermediate value should typically be set immediately (end value) except for "display" or things like borderTopStyle, borderBottomStyle, etc. which should use the beginning value during the tween.
+							//DEBUG: _log("non-tweening value "+p+": "+pt.xs0);
+						}
+					}
+				}
+				if (plugin) if (pt && !pt.plugin) {
+					pt.plugin = plugin;
+				}
+			}
+			return pt;
+		};
+
+
+		//gets called every time the tween updates, passing the new ratio (typically a value between 0 and 1, but not always (for example, if an Elastic.easeOut is used, the value can jump above 1 mid-tween). It will always start and 0 and end at 1.
+		p.setRatio = function(v) {
+			var pt = this._firstPT,
+				min = 0.000001,
+				val, str, i;
+			//at the end of the tween, we set the values to exactly what we received in order to make sure non-tweening values (like "position" or "float" or whatever) are set and so that if the beginning/ending suffixes (units) didn't match and we normalized to px, the value that the user passed in is used here. We check to see if the tween is at its beginning in case it's a from() tween in which case the ratio will actually go from 1 to 0 over the course of the tween (backwards).
+			if (v === 1 && (this._tween._time === this._tween._duration || this._tween._time === 0)) {
+				while (pt) {
+					if (pt.type !== 2) {
+						if (pt.r && pt.type !== -1) {
+							val = Math.round(pt.s + pt.c);
+							if (!pt.type) {
+								pt.t[pt.p] = val + pt.xs0;
+							} else if (pt.type === 1) { //complex value (one that typically has multiple numbers inside a string, like "rect(5px,10px,20px,25px)"
+								i = pt.l;
+								str = pt.xs0 + val + pt.xs1;
+								for (i = 1; i < pt.l; i++) {
+									str += pt["xn"+i] + pt["xs"+(i+1)];
+								}
+								pt.t[pt.p] = str;
+							}
+						} else {
+							pt.t[pt.p] = pt.e;
+						}
+					} else {
+						pt.setRatio(v);
+					}
+					pt = pt._next;
+				}
+
+			} else if (v || !(this._tween._time === this._tween._duration || this._tween._time === 0) || this._tween._rawPrevTime === -0.000001) {
+				while (pt) {
+					val = pt.c * v + pt.s;
+					if (pt.r) {
+						val = Math.round(val);
+					} else if (val < min) if (val > -min) {
+						val = 0;
+					}
+					if (!pt.type) {
+						pt.t[pt.p] = val + pt.xs0;
+					} else if (pt.type === 1) { //complex value (one that typically has multiple numbers inside a string, like "rect(5px,10px,20px,25px)"
+						i = pt.l;
+						if (i === 2) {
+							pt.t[pt.p] = pt.xs0 + val + pt.xs1 + pt.xn1 + pt.xs2;
+						} else if (i === 3) {
+							pt.t[pt.p] = pt.xs0 + val + pt.xs1 + pt.xn1 + pt.xs2 + pt.xn2 + pt.xs3;
+						} else if (i === 4) {
+							pt.t[pt.p] = pt.xs0 + val + pt.xs1 + pt.xn1 + pt.xs2 + pt.xn2 + pt.xs3 + pt.xn3 + pt.xs4;
+						} else if (i === 5) {
+							pt.t[pt.p] = pt.xs0 + val + pt.xs1 + pt.xn1 + pt.xs2 + pt.xn2 + pt.xs3 + pt.xn3 + pt.xs4 + pt.xn4 + pt.xs5;
+						} else {
+							str = pt.xs0 + val + pt.xs1;
+							for (i = 1; i < pt.l; i++) {
+								str += pt["xn"+i] + pt["xs"+(i+1)];
+							}
+							pt.t[pt.p] = str;
+						}
+
+					} else if (pt.type === -1) { //non-tweening value
+						pt.t[pt.p] = pt.xs0;
+
+					} else if (pt.setRatio) { //custom setRatio() for things like SpecialProps, external plugins, etc.
+						pt.setRatio(v);
+					}
+					pt = pt._next;
+				}
+
+			//if the tween is reversed all the way back to the beginning, we need to restore the original values which may have different units (like % instead of px or em or whatever).
+			} else {
+				while (pt) {
+					if (pt.type !== 2) {
+						pt.t[pt.p] = pt.b;
+					} else {
+						pt.setRatio(v);
+					}
+					pt = pt._next;
+				}
+			}
+		};
+
+		/**
+		 * @private
+		 * Forces rendering of the target's transforms (rotation, scale, etc.) whenever the CSSPlugin's setRatio() is called.
+		 * Basically, this tells the CSSPlugin to create a CSSPropTween (type 2) after instantiation that runs last in the linked
+		 * list and calls the appropriate (3D or 2D) rendering function. We separate this into its own method so that we can call
+		 * it from other plugins like BezierPlugin if, for example, it needs to apply an autoRotation and this CSSPlugin
+		 * doesn't have any transform-related properties of its own. You can call this method as many times as you
+		 * want and it won't create duplicate CSSPropTweens.
+		 *
+		 * @param {boolean} threeD if true, it should apply 3D tweens (otherwise, just 2D ones are fine and typically faster)
+		 */
+		p._enableTransforms = function(threeD) {
+			this._transform = this._transform || _getTransform(this._target, _cs, true); //ensures that the element has a _gsTransform property with the appropriate values.
+			this._transformType = (!(this._transform.svg && _useSVGTransformAttr) && (threeD || this._transformType === 3)) ? 3 : 2;
+		};
+
+		var lazySet = function(v) {
+			this.t[this.p] = this.e;
+			this.data._linkCSSP(this, this._next, null, true); //we purposefully keep this._next even though it'd make sense to null it, but this is a performance optimization, as this happens during the while (pt) {} loop in setRatio() at the bottom of which it sets pt = pt._next, so if we null it, the linked list will be broken in that loop.
+		};
+		/** @private Gives us a way to set a value on the first render (and only the first render). **/
+		p._addLazySet = function(t, p, v) {
+			var pt = this._firstPT = new CSSPropTween(t, p, 0, 0, this._firstPT, 2);
+			pt.e = v;
+			pt.setRatio = lazySet;
+			pt.data = this;
+		};
+
+		/** @private **/
+		p._linkCSSP = function(pt, next, prev, remove) {
+			if (pt) {
+				if (next) {
+					next._prev = pt;
+				}
+				if (pt._next) {
+					pt._next._prev = pt._prev;
+				}
+				if (pt._prev) {
+					pt._prev._next = pt._next;
+				} else if (this._firstPT === pt) {
+					this._firstPT = pt._next;
+					remove = true; //just to prevent resetting this._firstPT 5 lines down in case pt._next is null. (optimized for speed)
+				}
+				if (prev) {
+					prev._next = pt;
+				} else if (!remove && this._firstPT === null) {
+					this._firstPT = pt;
+				}
+				pt._next = next;
+				pt._prev = prev;
+			}
+			return pt;
+		};
+
+		p._mod = function(lookup) {
+			var pt = this._firstPT;
+			while (pt) {
+				if (typeof(lookup[pt.p]) === "function" && lookup[pt.p] === Math.round) { //only gets called by RoundPropsPlugin (ModifyPlugin manages all the rendering internally for CSSPlugin properties that need modification). Remember, we handle rounding a bit differently in this plugin for performance reasons, leveraging "r" as an indicator that the value should be rounded internally..
+					pt.r = 1;
+				}
+				pt = pt._next;
+			}
+		};
+
+		//we need to make sure that if alpha or autoAlpha is killed, opacity is too. And autoAlpha affects the "visibility" property.
+		p._kill = function(lookup) {
+			var copy = lookup,
+				pt, p, xfirst;
+			if (lookup.autoAlpha || lookup.alpha) {
+				copy = {};
+				for (p in lookup) { //copy the lookup so that we're not changing the original which may be passed elsewhere.
+					copy[p] = lookup[p];
+				}
+				copy.opacity = 1;
+				if (copy.autoAlpha) {
+					copy.visibility = 1;
+				}
+			}
+			if (lookup.className && (pt = this._classNamePT)) { //for className tweens, we need to kill any associated CSSPropTweens too; a linked list starts at the className's "xfirst".
+				xfirst = pt.xfirst;
+				if (xfirst && xfirst._prev) {
+					this._linkCSSP(xfirst._prev, pt._next, xfirst._prev._prev); //break off the prev
+				} else if (xfirst === this._firstPT) {
+					this._firstPT = pt._next;
+				}
+				if (pt._next) {
+					this._linkCSSP(pt._next, pt._next._next, xfirst._prev);
+				}
+				this._classNamePT = null;
+			}
+			pt = this._firstPT;
+			while (pt) {
+				if (pt.plugin && pt.plugin !== p && pt.plugin._kill) { //for plugins that are registered with CSSPlugin, we should notify them of the kill.
+					pt.plugin._kill(lookup);
+					p = pt.plugin;
+				}
+				pt = pt._next;
+			}
+			return TweenPlugin.prototype._kill.call(this, copy);
+		};
+
+
+
+		//used by cascadeTo() for gathering all the style properties of each child element into an array for comparison.
+		var _getChildStyles = function(e, props, targets) {
+				var children, i, child, type;
+				if (e.slice) {
+					i = e.length;
+					while (--i > -1) {
+						_getChildStyles(e[i], props, targets);
+					}
+					return;
+				}
+				children = e.childNodes;
+				i = children.length;
+				while (--i > -1) {
+					child = children[i];
+					type = child.type;
+					if (child.style) {
+						props.push(_getAllStyles(child));
+						if (targets) {
+							targets.push(child);
+						}
+					}
+					if ((type === 1 || type === 9 || type === 11) && child.childNodes.length) {
+						_getChildStyles(child, props, targets);
+					}
+				}
+			};
+
+		/**
+		 * Typically only useful for className tweens that may affect child elements, this method creates a TweenLite
+		 * and then compares the style properties of all the target's child elements at the tween's start and end, and
+		 * if any are different, it also creates tweens for those and returns an array containing ALL of the resulting
+		 * tweens (so that you can easily add() them to a TimelineLite, for example). The reason this functionality is
+		 * wrapped into a separate static method of CSSPlugin instead of being integrated into all regular className tweens
+		 * is because it creates entirely new tweens that may have completely different targets than the original tween,
+		 * so if they were all lumped into the original tween instance, it would be inconsistent with the rest of the API
+		 * and it would create other problems. For example:
+		 *  - If I create a tween of elementA, that tween instance may suddenly change its target to include 50 other elements (unintuitive if I specifically defined the target I wanted)
+		 *  - We can't just create new independent tweens because otherwise, what happens if the original/parent tween is reversed or pause or dropped into a TimelineLite for tight control? You'd expect that tween's behavior to affect all the others.
+		 *  - Analyzing every style property of every child before and after the tween is an expensive operation when there are many children, so this behavior shouldn't be imposed on all className tweens by default, especially since it's probably rare that this extra functionality is needed.
+		 *
+		 * @param {Object} target object to be tweened
+		 * @param {number} Duration in seconds (or frames for frames-based tweens)
+		 * @param {Object} Object containing the end values, like {className:"newClass", ease:Linear.easeNone}
+		 * @return {Array} An array of TweenLite instances
+		 */
+		CSSPlugin.cascadeTo = function(target, duration, vars) {
+			var tween = TweenLite.to(target, duration, vars),
+				results = [tween],
+				b = [],
+				e = [],
+				targets = [],
+				_reservedProps = TweenLite._internals.reservedProps,
+				i, difs, p, from;
+			target = tween._targets || tween.target;
+			_getChildStyles(target, b, targets);
+			tween.render(duration, true, true);
+			_getChildStyles(target, e);
+			tween.render(0, true, true);
+			tween._enabled(true);
+			i = targets.length;
+			while (--i > -1) {
+				difs = _cssDif(targets[i], b[i], e[i]);
+				if (difs.firstMPT) {
+					difs = difs.difs;
+					for (p in vars) {
+						if (_reservedProps[p]) {
+							difs[p] = vars[p];
+						}
+					}
+					from = {};
+					for (p in difs) {
+						from[p] = b[i][p];
+					}
+					results.push(TweenLite.fromTo(targets[i], duration, from, difs));
+				}
+			}
+			return results;
+		};
+
+		TweenPlugin.activate([CSSPlugin]);
+		return CSSPlugin;
+
+	}, true);
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+/*
+ * ----------------------------------------------------------------
+ * RoundPropsPlugin
+ * ----------------------------------------------------------------
+ */
+	(function() {
+
+		var RoundPropsPlugin = _gsScope._gsDefine.plugin({
+				propName: "roundProps",
+				version: "1.6.0",
+				priority: -1,
+				API: 2,
+
+				//called when the tween renders for the first time. This is where initial values should be recorded and any setup routines should run.
+				init: function(target, value, tween) {
+					this._tween = tween;
+					return true;
+				}
+
+			}),
+			_roundLinkedList = function(node) {
+				while (node) {
+					if (!node.f && !node.blob) {
+						node.m = Math.round;
+					}
+					node = node._next;
+				}
+			},
+			p = RoundPropsPlugin.prototype;
+
+		p._onInitAllProps = function() {
+			var tween = this._tween,
+				rp = (tween.vars.roundProps.join) ? tween.vars.roundProps : tween.vars.roundProps.split(","),
+				i = rp.length,
+				lookup = {},
+				rpt = tween._propLookup.roundProps,
+				prop, pt, next;
+			while (--i > -1) {
+				lookup[rp[i]] = Math.round;
+			}
+			i = rp.length;
+			while (--i > -1) {
+				prop = rp[i];
+				pt = tween._firstPT;
+				while (pt) {
+					next = pt._next; //record here, because it may get removed
+					if (pt.pg) {
+						pt.t._mod(lookup);
+					} else if (pt.n === prop) {
+						if (pt.f === 2 && pt.t) { //a blob (text containing multiple numeric values)
+							_roundLinkedList(pt.t._firstPT);
+						} else {
+							this._add(pt.t, prop, pt.s, pt.c);
+							//remove from linked list
+							if (next) {
+								next._prev = pt._prev;
+							}
+							if (pt._prev) {
+								pt._prev._next = next;
+							} else if (tween._firstPT === pt) {
+								tween._firstPT = next;
+							}
+							pt._next = pt._prev = null;
+							tween._propLookup[prop] = rpt;
+						}
+					}
+					pt = next;
+				}
+			}
+			return false;
+		};
+
+		p._add = function(target, p, s, c) {
+			this._addTween(target, p, s, s + c, p, Math.round);
+			this._overwriteProps.push(p);
+		};
+
+	}());
+
+
+
+
+
+
+
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * AttrPlugin
+ * ----------------------------------------------------------------
+ */
+
+	(function() {
+
+		_gsScope._gsDefine.plugin({
+			propName: "attr",
+			API: 2,
+			version: "0.6.1",
+
+			//called when the tween renders for the first time. This is where initial values should be recorded and any setup routines should run.
+			init: function(target, value, tween, index) {
+				var p, end;
+				if (typeof(target.setAttribute) !== "function") {
+					return false;
+				}
+				for (p in value) {
+					end = value[p];
+					if (typeof(end) === "function") {
+						end = end(index, target);
+					}
+					this._addTween(target, "setAttribute", target.getAttribute(p) + "", end + "", p, false, p);
+					this._overwriteProps.push(p);
+				}
+				return true;
+			}
+
+		});
+
+	}());
+
+
+
+
+
+
+
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * DirectionalRotationPlugin
+ * ----------------------------------------------------------------
+ */
+	_gsScope._gsDefine.plugin({
+		propName: "directionalRotation",
+		version: "0.3.1",
+		API: 2,
+
+		//called when the tween renders for the first time. This is where initial values should be recorded and any setup routines should run.
+		init: function(target, value, tween, index) {
+			if (typeof(value) !== "object") {
+				value = {rotation:value};
+			}
+			this.finals = {};
+			var cap = (value.useRadians === true) ? Math.PI * 2 : 360,
+				min = 0.000001,
+				p, v, start, end, dif, split;
+			for (p in value) {
+				if (p !== "useRadians") {
+					end = value[p];
+					if (typeof(end) === "function") {
+						end = end(index, target);
+					}
+					split = (end + "").split("_");
+					v = split[0];
+					start = parseFloat( (typeof(target[p]) !== "function") ? target[p] : target[ ((p.indexOf("set") || typeof(target["get" + p.substr(3)]) !== "function") ? p : "get" + p.substr(3)) ]() );
+					end = this.finals[p] = (typeof(v) === "string" && v.charAt(1) === "=") ? start + parseInt(v.charAt(0) + "1", 10) * Number(v.substr(2)) : Number(v) || 0;
+					dif = end - start;
+					if (split.length) {
+						v = split.join("_");
+						if (v.indexOf("short") !== -1) {
+							dif = dif % cap;
+							if (dif !== dif % (cap / 2)) {
+								dif = (dif < 0) ? dif + cap : dif - cap;
+							}
+						}
+						if (v.indexOf("_cw") !== -1 && dif < 0) {
+							dif = ((dif + cap * 9999999999) % cap) - ((dif / cap) | 0) * cap;
+						} else if (v.indexOf("ccw") !== -1 && dif > 0) {
+							dif = ((dif - cap * 9999999999) % cap) - ((dif / cap) | 0) * cap;
+						}
+					}
+					if (dif > min || dif < -min) {
+						this._addTween(target, p, start, start + dif, p);
+						this._overwriteProps.push(p);
+					}
+				}
+			}
+			return true;
+		},
+
+		//called each time the values should be updated, and the ratio gets passed as the only parameter (typically it's a value between 0 and 1, but it can exceed those when using an ease like Elastic.easeOut or Back.easeOut, etc.)
+		set: function(ratio) {
+			var pt;
+			if (ratio !== 1) {
+				this._super.setRatio.call(this, ratio);
+			} else {
+				pt = this._firstPT;
+				while (pt) {
+					if (pt.f) {
+						pt.t[pt.p](this.finals[pt.p]);
+					} else {
+						pt.t[pt.p] = this.finals[pt.p];
+					}
+					pt = pt._next;
+				}
+			}
+		}
+
+	})._autoCSS = true;
+
+
+
+
+
+
+
+	
+	
+	
+	
+/*
+ * ----------------------------------------------------------------
+ * EasePack
+ * ----------------------------------------------------------------
+ */
+	_gsScope._gsDefine("easing.Back", ["easing.Ease"], function(Ease) {
+		
+		var w = (_gsScope.GreenSockGlobals || _gsScope),
+			gs = w.com.greensock,
+			_2PI = Math.PI * 2,
+			_HALF_PI = Math.PI / 2,
+			_class = gs._class,
+			_create = function(n, f) {
+				var C = _class("easing." + n, function(){}, true),
+					p = C.prototype = new Ease();
+				p.constructor = C;
+				p.getRatio = f;
+				return C;
+			},
+			_easeReg = Ease.register || function(){}, //put an empty function in place just as a safety measure in case someone loads an OLD version of TweenLite.js where Ease.register doesn't exist.
+			_wrap = function(name, EaseOut, EaseIn, EaseInOut, aliases) {
+				var C = _class("easing."+name, {
+					easeOut:new EaseOut(),
+					easeIn:new EaseIn(),
+					easeInOut:new EaseInOut()
+				}, true);
+				_easeReg(C, name);
+				return C;
+			},
+			EasePoint = function(time, value, next) {
+				this.t = time;
+				this.v = value;
+				if (next) {
+					this.next = next;
+					next.prev = this;
+					this.c = next.v - value;
+					this.gap = next.t - time;
+				}
+			},
+
+			//Back
+			_createBack = function(n, f) {
+				var C = _class("easing." + n, function(overshoot) {
+						this._p1 = (overshoot || overshoot === 0) ? overshoot : 1.70158;
+						this._p2 = this._p1 * 1.525;
+					}, true),
+					p = C.prototype = new Ease();
+				p.constructor = C;
+				p.getRatio = f;
+				p.config = function(overshoot) {
+					return new C(overshoot);
+				};
+				return C;
+			},
+
+			Back = _wrap("Back",
+				_createBack("BackOut", function(p) {
+					return ((p = p - 1) * p * ((this._p1 + 1) * p + this._p1) + 1);
+				}),
+				_createBack("BackIn", function(p) {
+					return p * p * ((this._p1 + 1) * p - this._p1);
+				}),
+				_createBack("BackInOut", function(p) {
+					return ((p *= 2) < 1) ? 0.5 * p * p * ((this._p2 + 1) * p - this._p2) : 0.5 * ((p -= 2) * p * ((this._p2 + 1) * p + this._p2) + 2);
+				})
+			),
+
+
+			//SlowMo
+			SlowMo = _class("easing.SlowMo", function(linearRatio, power, yoyoMode) {
+				power = (power || power === 0) ? power : 0.7;
+				if (linearRatio == null) {
+					linearRatio = 0.7;
+				} else if (linearRatio > 1) {
+					linearRatio = 1;
+				}
+				this._p = (linearRatio !== 1) ? power : 0;
+				this._p1 = (1 - linearRatio) / 2;
+				this._p2 = linearRatio;
+				this._p3 = this._p1 + this._p2;
+				this._calcEnd = (yoyoMode === true);
+			}, true),
+			p = SlowMo.prototype = new Ease(),
+			SteppedEase, RoughEase, _createElastic;
+
+		p.constructor = SlowMo;
+		p.getRatio = function(p) {
+			var r = p + (0.5 - p) * this._p;
+			if (p < this._p1) {
+				return this._calcEnd ? 1 - ((p = 1 - (p / this._p1)) * p) : r - ((p = 1 - (p / this._p1)) * p * p * p * r);
+			} else if (p > this._p3) {
+				return this._calcEnd ? 1 - (p = (p - this._p3) / this._p1) * p : r + ((p - r) * (p = (p - this._p3) / this._p1) * p * p * p);
+			}
+			return this._calcEnd ? 1 : r;
+		};
+		SlowMo.ease = new SlowMo(0.7, 0.7);
+
+		p.config = SlowMo.config = function(linearRatio, power, yoyoMode) {
+			return new SlowMo(linearRatio, power, yoyoMode);
+		};
+
+
+		//SteppedEase
+		SteppedEase = _class("easing.SteppedEase", function(steps, immediateStart) {
+				steps = steps || 1;
+				this._p1 = 1 / steps;
+				this._p2 = steps + (immediateStart ? 0 : 1);
+				this._p3 = immediateStart ? 1 : 0;
+			}, true);
+		p = SteppedEase.prototype = new Ease();
+		p.constructor = SteppedEase;
+		p.getRatio = function(p) {
+			if (p < 0) {
+				p = 0;
+			} else if (p >= 1) {
+				p = 0.999999999;
+			}
+			return (((this._p2 * p) | 0) + this._p3) * this._p1;
+		};
+		p.config = SteppedEase.config = function(steps, immediateStart) {
+			return new SteppedEase(steps, immediateStart);
+		};
+
+
+		//RoughEase
+		RoughEase = _class("easing.RoughEase", function(vars) {
+			vars = vars || {};
+			var taper = vars.taper || "none",
+				a = [],
+				cnt = 0,
+				points = (vars.points || 20) | 0,
+				i = points,
+				randomize = (vars.randomize !== false),
+				clamp = (vars.clamp === true),
+				template = (vars.template instanceof Ease) ? vars.template : null,
+				strength = (typeof(vars.strength) === "number") ? vars.strength * 0.4 : 0.4,
+				x, y, bump, invX, obj, pnt;
+			while (--i > -1) {
+				x = randomize ? Math.random() : (1 / points) * i;
+				y = template ? template.getRatio(x) : x;
+				if (taper === "none") {
+					bump = strength;
+				} else if (taper === "out") {
+					invX = 1 - x;
+					bump = invX * invX * strength;
+				} else if (taper === "in") {
+					bump = x * x * strength;
+				} else if (x < 0.5) {  //"both" (start)
+					invX = x * 2;
+					bump = invX * invX * 0.5 * strength;
+				} else {				//"both" (end)
+					invX = (1 - x) * 2;
+					bump = invX * invX * 0.5 * strength;
+				}
+				if (randomize) {
+					y += (Math.random() * bump) - (bump * 0.5);
+				} else if (i % 2) {
+					y += bump * 0.5;
+				} else {
+					y -= bump * 0.5;
+				}
+				if (clamp) {
+					if (y > 1) {
+						y = 1;
+					} else if (y < 0) {
+						y = 0;
+					}
+				}
+				a[cnt++] = {x:x, y:y};
+			}
+			a.sort(function(a, b) {
+				return a.x - b.x;
+			});
+
+			pnt = new EasePoint(1, 1, null);
+			i = points;
+			while (--i > -1) {
+				obj = a[i];
+				pnt = new EasePoint(obj.x, obj.y, pnt);
+			}
+
+			this._prev = new EasePoint(0, 0, (pnt.t !== 0) ? pnt : pnt.next);
+		}, true);
+		p = RoughEase.prototype = new Ease();
+		p.constructor = RoughEase;
+		p.getRatio = function(p) {
+			var pnt = this._prev;
+			if (p > pnt.t) {
+				while (pnt.next && p >= pnt.t) {
+					pnt = pnt.next;
+				}
+				pnt = pnt.prev;
+			} else {
+				while (pnt.prev && p <= pnt.t) {
+					pnt = pnt.prev;
+				}
+			}
+			this._prev = pnt;
+			return (pnt.v + ((p - pnt.t) / pnt.gap) * pnt.c);
+		};
+		p.config = function(vars) {
+			return new RoughEase(vars);
+		};
+		RoughEase.ease = new RoughEase();
+
+
+		//Bounce
+		_wrap("Bounce",
+			_create("BounceOut", function(p) {
+				if (p < 1 / 2.75) {
+					return 7.5625 * p * p;
+				} else if (p < 2 / 2.75) {
+					return 7.5625 * (p -= 1.5 / 2.75) * p + 0.75;
+				} else if (p < 2.5 / 2.75) {
+					return 7.5625 * (p -= 2.25 / 2.75) * p + 0.9375;
+				}
+				return 7.5625 * (p -= 2.625 / 2.75) * p + 0.984375;
+			}),
+			_create("BounceIn", function(p) {
+				if ((p = 1 - p) < 1 / 2.75) {
+					return 1 - (7.5625 * p * p);
+				} else if (p < 2 / 2.75) {
+					return 1 - (7.5625 * (p -= 1.5 / 2.75) * p + 0.75);
+				} else if (p < 2.5 / 2.75) {
+					return 1 - (7.5625 * (p -= 2.25 / 2.75) * p + 0.9375);
+				}
+				return 1 - (7.5625 * (p -= 2.625 / 2.75) * p + 0.984375);
+			}),
+			_create("BounceInOut", function(p) {
+				var invert = (p < 0.5);
+				if (invert) {
+					p = 1 - (p * 2);
+				} else {
+					p = (p * 2) - 1;
+				}
+				if (p < 1 / 2.75) {
+					p = 7.5625 * p * p;
+				} else if (p < 2 / 2.75) {
+					p = 7.5625 * (p -= 1.5 / 2.75) * p + 0.75;
+				} else if (p < 2.5 / 2.75) {
+					p = 7.5625 * (p -= 2.25 / 2.75) * p + 0.9375;
+				} else {
+					p = 7.5625 * (p -= 2.625 / 2.75) * p + 0.984375;
+				}
+				return invert ? (1 - p) * 0.5 : p * 0.5 + 0.5;
+			})
+		);
+
+
+		//CIRC
+		_wrap("Circ",
+			_create("CircOut", function(p) {
+				return Math.sqrt(1 - (p = p - 1) * p);
+			}),
+			_create("CircIn", function(p) {
+				return -(Math.sqrt(1 - (p * p)) - 1);
+			}),
+			_create("CircInOut", function(p) {
+				return ((p*=2) < 1) ? -0.5 * (Math.sqrt(1 - p * p) - 1) : 0.5 * (Math.sqrt(1 - (p -= 2) * p) + 1);
+			})
+		);
+
+
+		//Elastic
+		_createElastic = function(n, f, def) {
+			var C = _class("easing." + n, function(amplitude, period) {
+					this._p1 = (amplitude >= 1) ? amplitude : 1; //note: if amplitude is < 1, we simply adjust the period for a more natural feel. Otherwise the math doesn't work right and the curve starts at 1.
+					this._p2 = (period || def) / (amplitude < 1 ? amplitude : 1);
+					this._p3 = this._p2 / _2PI * (Math.asin(1 / this._p1) || 0);
+					this._p2 = _2PI / this._p2; //precalculate to optimize
+				}, true),
+				p = C.prototype = new Ease();
+			p.constructor = C;
+			p.getRatio = f;
+			p.config = function(amplitude, period) {
+				return new C(amplitude, period);
+			};
+			return C;
+		};
+		_wrap("Elastic",
+			_createElastic("ElasticOut", function(p) {
+				return this._p1 * Math.pow(2, -10 * p) * Math.sin( (p - this._p3) * this._p2 ) + 1;
+			}, 0.3),
+			_createElastic("ElasticIn", function(p) {
+				return -(this._p1 * Math.pow(2, 10 * (p -= 1)) * Math.sin( (p - this._p3) * this._p2 ));
+			}, 0.3),
+			_createElastic("ElasticInOut", function(p) {
+				return ((p *= 2) < 1) ? -0.5 * (this._p1 * Math.pow(2, 10 * (p -= 1)) * Math.sin( (p - this._p3) * this._p2)) : this._p1 * Math.pow(2, -10 *(p -= 1)) * Math.sin( (p - this._p3) * this._p2 ) * 0.5 + 1;
+			}, 0.45)
+		);
+
+
+		//Expo
+		_wrap("Expo",
+			_create("ExpoOut", function(p) {
+				return 1 - Math.pow(2, -10 * p);
+			}),
+			_create("ExpoIn", function(p) {
+				return Math.pow(2, 10 * (p - 1)) - 0.001;
+			}),
+			_create("ExpoInOut", function(p) {
+				return ((p *= 2) < 1) ? 0.5 * Math.pow(2, 10 * (p - 1)) : 0.5 * (2 - Math.pow(2, -10 * (p - 1)));
+			})
+		);
+
+
+		//Sine
+		_wrap("Sine",
+			_create("SineOut", function(p) {
+				return Math.sin(p * _HALF_PI);
+			}),
+			_create("SineIn", function(p) {
+				return -Math.cos(p * _HALF_PI) + 1;
+			}),
+			_create("SineInOut", function(p) {
+				return -0.5 * (Math.cos(Math.PI * p) - 1);
+			})
+		);
+
+		_class("easing.EaseLookup", {
+				find:function(s) {
+					return Ease.map[s];
+				}
+			}, true);
+
+		//register the non-standard eases
+		_easeReg(w.SlowMo, "SlowMo", "ease,");
+		_easeReg(RoughEase, "RoughEase", "ease,");
+		_easeReg(SteppedEase, "SteppedEase", "ease,");
+
+		return Back;
+		
+	}, true);
+
+
+});
+
+if (_gsScope._gsDefine) { _gsScope._gsQueue.pop()(); } //necessary in case TweenLite was already loaded separately.
+
+
+
+
+
+
+
+
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * Base classes like TweenLite, SimpleTimeline, Ease, Ticker, etc.
+ * ----------------------------------------------------------------
+ */
+(function(window, moduleName) {
+
+		"use strict";
+		var _exports = {},
+			_doc = window.document,
+			_globals = window.GreenSockGlobals = window.GreenSockGlobals || window;
+		if (_globals.TweenLite) {
+			return; //in case the core set of classes is already loaded, don't instantiate twice.
+		}
+		var _namespace = function(ns) {
+				var a = ns.split("."),
+					p = _globals, i;
+				for (i = 0; i < a.length; i++) {
+					p[a[i]] = p = p[a[i]] || {};
+				}
+				return p;
+			},
+			gs = _namespace("com.greensock"),
+			_tinyNum = 0.0000000001,
+			_slice = function(a) { //don't use Array.prototype.slice.call(target, 0) because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+				var b = [],
+					l = a.length,
+					i;
+				for (i = 0; i !== l; b.push(a[i++])) {}
+				return b;
+			},
+			_emptyFunc = function() {},
+			_isArray = (function() { //works around issues in iframe environments where the Array global isn't shared, thus if the object originates in a different window/iframe, "(obj instanceof Array)" will evaluate false. We added some speed optimizations to avoid Object.prototype.toString.call() unless it's absolutely necessary because it's VERY slow (like 20x slower)
+				var toString = Object.prototype.toString,
+					array = toString.call([]);
+				return function(obj) {
+					return obj != null && (obj instanceof Array || (typeof(obj) === "object" && !!obj.push && toString.call(obj) === array));
+				};
+			}()),
+			a, i, p, _ticker, _tickerActive,
+			_defLookup = {},
+
+			/**
+			 * @constructor
+			 * Defines a GreenSock class, optionally with an array of dependencies that must be instantiated first and passed into the definition.
+			 * This allows users to load GreenSock JS files in any order even if they have interdependencies (like CSSPlugin extends TweenPlugin which is
+			 * inside TweenLite.js, but if CSSPlugin is loaded first, it should wait to run its code until TweenLite.js loads and instantiates TweenPlugin
+			 * and then pass TweenPlugin to CSSPlugin's definition). This is all done automatically and internally.
+			 *
+			 * Every definition will be added to a "com.greensock" global object (typically window, but if a window.GreenSockGlobals object is found,
+			 * it will go there as of v1.7). For example, TweenLite will be found at window.com.greensock.TweenLite and since it's a global class that should be available anywhere,
+			 * it is ALSO referenced at window.TweenLite. However some classes aren't considered global, like the base com.greensock.core.Animation class, so
+			 * those will only be at the package like window.com.greensock.core.Animation. Again, if you define a GreenSockGlobals object on the window, everything
+			 * gets tucked neatly inside there instead of on the window directly. This allows you to do advanced things like load multiple versions of GreenSock
+			 * files and put them into distinct objects (imagine a banner ad uses a newer version but the main site uses an older one). In that case, you could
+			 * sandbox the banner one like:
+			 *
+			 * <script>
+			 *     var gs = window.GreenSockGlobals = {}; //the newer version we're about to load could now be referenced in a "gs" object, like gs.TweenLite.to(...). Use whatever alias you want as long as it's unique, "gs" or "banner" or whatever.
+			 * </script>
+			 * <script src="js/greensock/v1.7/TweenMax.js"></script>
+			 * <script>
+			 *     window.GreenSockGlobals = window._gsQueue = window._gsDefine = null; //reset it back to null (along with the special _gsQueue variable) so that the next load of TweenMax affects the window and we can reference things directly like TweenLite.to(...)
+			 * </script>
+			 * <script src="js/greensock/v1.6/TweenMax.js"></script>
+			 * <script>
+			 *     gs.TweenLite.to(...); //would use v1.7
+			 *     TweenLite.to(...); //would use v1.6
+			 * </script>
+			 *
+			 * @param {!string} ns The namespace of the class definition, leaving off "com.greensock." as that's assumed. For example, "TweenLite" or "plugins.CSSPlugin" or "easing.Back".
+			 * @param {!Array.<string>} dependencies An array of dependencies (described as their namespaces minus "com.greensock." prefix). For example ["TweenLite","plugins.TweenPlugin","core.Animation"]
+			 * @param {!function():Object} func The function that should be called and passed the resolved dependencies which will return the actual class for this definition.
+			 * @param {boolean=} global If true, the class will be added to the global scope (typically window unless you define a window.GreenSockGlobals object)
+			 */
+			Definition = function(ns, dependencies, func, global) {
+				this.sc = (_defLookup[ns]) ? _defLookup[ns].sc : []; //subclasses
+				_defLookup[ns] = this;
+				this.gsClass = null;
+				this.func = func;
+				var _classes = [];
+				this.check = function(init) {
+					var i = dependencies.length,
+						missing = i,
+						cur, a, n, cl;
+					while (--i > -1) {
+						if ((cur = _defLookup[dependencies[i]] || new Definition(dependencies[i], [])).gsClass) {
+							_classes[i] = cur.gsClass;
+							missing--;
+						} else if (init) {
+							cur.sc.push(this);
+						}
+					}
+					if (missing === 0 && func) {
+						a = ("com.greensock." + ns).split(".");
+						n = a.pop();
+						cl = _namespace(a.join("."))[n] = this.gsClass = func.apply(func, _classes);
+
+						//exports to multiple environments
+						if (global) {
+							_globals[n] = _exports[n] = cl; //provides a way to avoid global namespace pollution. By default, the main classes like TweenLite, Power1, Strong, etc. are added to window unless a GreenSockGlobals is defined. So if you want to have things added to a custom object instead, just do something like window.GreenSockGlobals = {} before loading any GreenSock files. You can even set up an alias like window.GreenSockGlobals = windows.gs = {} so that you can access everything like gs.TweenLite. Also remember that ALL classes are added to the window.com.greensock object (in their respective packages, like com.greensock.easing.Power1, com.greensock.TweenLite, etc.)
+							if (typeof(module) !== "undefined" && module.exports) { //node
+								if (ns === moduleName) {
+									module.exports = _exports[moduleName] = cl;
+									for (i in _exports) {
+										cl[i] = _exports[i];
+									}
+								} else if (_exports[moduleName]) {
+									_exports[moduleName][n] = cl;
+								}
+							} else if (true){ //AMD
+								!(__WEBPACK_AMD_DEFINE_ARRAY__ = [], __WEBPACK_AMD_DEFINE_RESULT__ = function() { return cl; }.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+							}
+						}
+						for (i = 0; i < this.sc.length; i++) {
+							this.sc[i].check();
+						}
+					}
+				};
+				this.check(true);
+			},
+
+			//used to create Definition instances (which basically registers a class that has dependencies).
+			_gsDefine = window._gsDefine = function(ns, dependencies, func, global) {
+				return new Definition(ns, dependencies, func, global);
+			},
+
+			//a quick way to create a class that doesn't have any dependencies. Returns the class, but first registers it in the GreenSock namespace so that other classes can grab it (other classes might be dependent on the class).
+			_class = gs._class = function(ns, func, global) {
+				func = func || function() {};
+				_gsDefine(ns, [], function(){ return func; }, global);
+				return func;
+			};
+
+		_gsDefine.globals = _globals;
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * Ease
+ * ----------------------------------------------------------------
+ */
+		var _baseParams = [0, 0, 1, 1],
+			Ease = _class("easing.Ease", function(func, extraParams, type, power) {
+				this._func = func;
+				this._type = type || 0;
+				this._power = power || 0;
+				this._params = extraParams ? _baseParams.concat(extraParams) : _baseParams;
+			}, true),
+			_easeMap = Ease.map = {},
+			_easeReg = Ease.register = function(ease, names, types, create) {
+				var na = names.split(","),
+					i = na.length,
+					ta = (types || "easeIn,easeOut,easeInOut").split(","),
+					e, name, j, type;
+				while (--i > -1) {
+					name = na[i];
+					e = create ? _class("easing."+name, null, true) : gs.easing[name] || {};
+					j = ta.length;
+					while (--j > -1) {
+						type = ta[j];
+						_easeMap[name + "." + type] = _easeMap[type + name] = e[type] = ease.getRatio ? ease : ease[type] || new ease();
+					}
+				}
+			};
+
+		p = Ease.prototype;
+		p._calcEnd = false;
+		p.getRatio = function(p) {
+			if (this._func) {
+				this._params[0] = p;
+				return this._func.apply(null, this._params);
+			}
+			var t = this._type,
+				pw = this._power,
+				r = (t === 1) ? 1 - p : (t === 2) ? p : (p < 0.5) ? p * 2 : (1 - p) * 2;
+			if (pw === 1) {
+				r *= r;
+			} else if (pw === 2) {
+				r *= r * r;
+			} else if (pw === 3) {
+				r *= r * r * r;
+			} else if (pw === 4) {
+				r *= r * r * r * r;
+			}
+			return (t === 1) ? 1 - r : (t === 2) ? r : (p < 0.5) ? r / 2 : 1 - (r / 2);
+		};
+
+		//create all the standard eases like Linear, Quad, Cubic, Quart, Quint, Strong, Power0, Power1, Power2, Power3, and Power4 (each with easeIn, easeOut, and easeInOut)
+		a = ["Linear","Quad","Cubic","Quart","Quint,Strong"];
+		i = a.length;
+		while (--i > -1) {
+			p = a[i]+",Power"+i;
+			_easeReg(new Ease(null,null,1,i), p, "easeOut", true);
+			_easeReg(new Ease(null,null,2,i), p, "easeIn" + ((i === 0) ? ",easeNone" : ""));
+			_easeReg(new Ease(null,null,3,i), p, "easeInOut");
+		}
+		_easeMap.linear = gs.easing.Linear.easeIn;
+		_easeMap.swing = gs.easing.Quad.easeInOut; //for jQuery folks
+
+
+/*
+ * ----------------------------------------------------------------
+ * EventDispatcher
+ * ----------------------------------------------------------------
+ */
+		var EventDispatcher = _class("events.EventDispatcher", function(target) {
+			this._listeners = {};
+			this._eventTarget = target || this;
+		});
+		p = EventDispatcher.prototype;
+
+		p.addEventListener = function(type, callback, scope, useParam, priority) {
+			priority = priority || 0;
+			var list = this._listeners[type],
+				index = 0,
+				listener, i;
+			if (this === _ticker && !_tickerActive) {
+				_ticker.wake();
+			}
+			if (list == null) {
+				this._listeners[type] = list = [];
+			}
+			i = list.length;
+			while (--i > -1) {
+				listener = list[i];
+				if (listener.c === callback && listener.s === scope) {
+					list.splice(i, 1);
+				} else if (index === 0 && listener.pr < priority) {
+					index = i + 1;
+				}
+			}
+			list.splice(index, 0, {c:callback, s:scope, up:useParam, pr:priority});
+		};
+
+		p.removeEventListener = function(type, callback) {
+			var list = this._listeners[type], i;
+			if (list) {
+				i = list.length;
+				while (--i > -1) {
+					if (list[i].c === callback) {
+						list.splice(i, 1);
+						return;
+					}
+				}
+			}
+		};
+
+		p.dispatchEvent = function(type) {
+			var list = this._listeners[type],
+				i, t, listener;
+			if (list) {
+				i = list.length;
+				if (i > 1) {
+					list = list.slice(0); //in case addEventListener() is called from within a listener/callback (otherwise the index could change, resulting in a skip)
+				}
+				t = this._eventTarget;
+				while (--i > -1) {
+					listener = list[i];
+					if (listener) {
+						if (listener.up) {
+							listener.c.call(listener.s || t, {type:type, target:t});
+						} else {
+							listener.c.call(listener.s || t);
+						}
+					}
+				}
+			}
+		};
+
+
+/*
+ * ----------------------------------------------------------------
+ * Ticker
+ * ----------------------------------------------------------------
+ */
+ 		var _reqAnimFrame = window.requestAnimationFrame,
+			_cancelAnimFrame = window.cancelAnimationFrame,
+			_getTime = Date.now || function() {return new Date().getTime();},
+			_lastUpdate = _getTime();
+
+		//now try to determine the requestAnimationFrame and cancelAnimationFrame functions and if none are found, we'll use a setTimeout()/clearTimeout() polyfill.
+		a = ["ms","moz","webkit","o"];
+		i = a.length;
+		while (--i > -1 && !_reqAnimFrame) {
+			_reqAnimFrame = window[a[i] + "RequestAnimationFrame"];
+			_cancelAnimFrame = window[a[i] + "CancelAnimationFrame"] || window[a[i] + "CancelRequestAnimationFrame"];
+		}
+
+		_class("Ticker", function(fps, useRAF) {
+			var _self = this,
+				_startTime = _getTime(),
+				_useRAF = (useRAF !== false && _reqAnimFrame) ? "auto" : false,
+				_lagThreshold = 500,
+				_adjustedLag = 33,
+				_tickWord = "tick", //helps reduce gc burden
+				_fps, _req, _id, _gap, _nextTime,
+				_tick = function(manual) {
+					var elapsed = _getTime() - _lastUpdate,
+						overlap, dispatch;
+					if (elapsed > _lagThreshold) {
+						_startTime += elapsed - _adjustedLag;
+					}
+					_lastUpdate += elapsed;
+					_self.time = (_lastUpdate - _startTime) / 1000;
+					overlap = _self.time - _nextTime;
+					if (!_fps || overlap > 0 || manual === true) {
+						_self.frame++;
+						_nextTime += overlap + (overlap >= _gap ? 0.004 : _gap - overlap);
+						dispatch = true;
+					}
+					if (manual !== true) { //make sure the request is made before we dispatch the "tick" event so that timing is maintained. Otherwise, if processing the "tick" requires a bunch of time (like 15ms) and we're using a setTimeout() that's based on 16.7ms, it'd technically take 31.7ms between frames otherwise.
+						_id = _req(_tick);
+					}
+					if (dispatch) {
+						_self.dispatchEvent(_tickWord);
+					}
+				};
+
+			EventDispatcher.call(_self);
+			_self.time = _self.frame = 0;
+			_self.tick = function() {
+				_tick(true);
+			};
+
+			_self.lagSmoothing = function(threshold, adjustedLag) {
+				_lagThreshold = threshold || (1 / _tinyNum); //zero should be interpreted as basically unlimited
+				_adjustedLag = Math.min(adjustedLag, _lagThreshold, 0);
+			};
+
+			_self.sleep = function() {
+				if (_id == null) {
+					return;
+				}
+				if (!_useRAF || !_cancelAnimFrame) {
+					clearTimeout(_id);
+				} else {
+					_cancelAnimFrame(_id);
+				}
+				_req = _emptyFunc;
+				_id = null;
+				if (_self === _ticker) {
+					_tickerActive = false;
+				}
+			};
+
+			_self.wake = function(seamless) {
+				if (_id !== null) {
+					_self.sleep();
+				} else if (seamless) {
+					_startTime += -_lastUpdate + (_lastUpdate = _getTime());
+				} else if (_self.frame > 10) { //don't trigger lagSmoothing if we're just waking up, and make sure that at least 10 frames have elapsed because of the iOS bug that we work around below with the 1.5-second setTimout().
+					_lastUpdate = _getTime() - _lagThreshold + 5;
+				}
+				_req = (_fps === 0) ? _emptyFunc : (!_useRAF || !_reqAnimFrame) ? function(f) { return setTimeout(f, ((_nextTime - _self.time) * 1000 + 1) | 0); } : _reqAnimFrame;
+				if (_self === _ticker) {
+					_tickerActive = true;
+				}
+				_tick(2);
+			};
+
+			_self.fps = function(value) {
+				if (!arguments.length) {
+					return _fps;
+				}
+				_fps = value;
+				_gap = 1 / (_fps || 60);
+				_nextTime = this.time + _gap;
+				_self.wake();
+			};
+
+			_self.useRAF = function(value) {
+				if (!arguments.length) {
+					return _useRAF;
+				}
+				_self.sleep();
+				_useRAF = value;
+				_self.fps(_fps);
+			};
+			_self.fps(fps);
+
+			//a bug in iOS 6 Safari occasionally prevents the requestAnimationFrame from working initially, so we use a 1.5-second timeout that automatically falls back to setTimeout() if it senses this condition.
+			setTimeout(function() {
+				if (_useRAF === "auto" && _self.frame < 5 && _doc.visibilityState !== "hidden") {
+					_self.useRAF(false);
+				}
+			}, 1500);
+		});
+
+		p = gs.Ticker.prototype = new gs.events.EventDispatcher();
+		p.constructor = gs.Ticker;
+
+
+/*
+ * ----------------------------------------------------------------
+ * Animation
+ * ----------------------------------------------------------------
+ */
+		var Animation = _class("core.Animation", function(duration, vars) {
+				this.vars = vars = vars || {};
+				this._duration = this._totalDuration = duration || 0;
+				this._delay = Number(vars.delay) || 0;
+				this._timeScale = 1;
+				this._active = (vars.immediateRender === true);
+				this.data = vars.data;
+				this._reversed = (vars.reversed === true);
+
+				if (!_rootTimeline) {
+					return;
+				}
+				if (!_tickerActive) { //some browsers (like iOS 6 Safari) shut down JavaScript execution when the tab is disabled and they [occasionally] neglect to start up requestAnimationFrame again when returning - this code ensures that the engine starts up again properly.
+					_ticker.wake();
+				}
+
+				var tl = this.vars.useFrames ? _rootFramesTimeline : _rootTimeline;
+				tl.add(this, tl._time);
+
+				if (this.vars.paused) {
+					this.paused(true);
+				}
+			});
+
+		_ticker = Animation.ticker = new gs.Ticker();
+		p = Animation.prototype;
+		p._dirty = p._gc = p._initted = p._paused = false;
+		p._totalTime = p._time = 0;
+		p._rawPrevTime = -1;
+		p._next = p._last = p._onUpdate = p._timeline = p.timeline = null;
+		p._paused = false;
+
+
+		//some browsers (like iOS) occasionally drop the requestAnimationFrame event when the user switches to a different tab and then comes back again, so we use a 2-second setTimeout() to sense if/when that condition occurs and then wake() the ticker.
+		var _checkTimeout = function() {
+				if (_tickerActive && _getTime() - _lastUpdate > 2000 && _doc.visibilityState !== "hidden") {
+					_ticker.wake();
+				}
+				var t = setTimeout(_checkTimeout, 2000);
+				if (t.unref) {
+					// allows a node process to exit even if the timeout’s callback hasn't been invoked. Without it, the node process could hang as this function is called every two seconds.
+					t.unref();
+				}
+			};
+		_checkTimeout();
+
+
+		p.play = function(from, suppressEvents) {
+			if (from != null) {
+				this.seek(from, suppressEvents);
+			}
+			return this.reversed(false).paused(false);
+		};
+
+		p.pause = function(atTime, suppressEvents) {
+			if (atTime != null) {
+				this.seek(atTime, suppressEvents);
+			}
+			return this.paused(true);
+		};
+
+		p.resume = function(from, suppressEvents) {
+			if (from != null) {
+				this.seek(from, suppressEvents);
+			}
+			return this.paused(false);
+		};
+
+		p.seek = function(time, suppressEvents) {
+			return this.totalTime(Number(time), suppressEvents !== false);
+		};
+
+		p.restart = function(includeDelay, suppressEvents) {
+			return this.reversed(false).paused(false).totalTime(includeDelay ? -this._delay : 0, (suppressEvents !== false), true);
+		};
+
+		p.reverse = function(from, suppressEvents) {
+			if (from != null) {
+				this.seek((from || this.totalDuration()), suppressEvents);
+			}
+			return this.reversed(true).paused(false);
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			//stub - we override this method in subclasses.
+		};
+
+		p.invalidate = function() {
+			this._time = this._totalTime = 0;
+			this._initted = this._gc = false;
+			this._rawPrevTime = -1;
+			if (this._gc || !this.timeline) {
+				this._enabled(true);
+			}
+			return this;
+		};
+
+		p.isActive = function() {
+			var tl = this._timeline, //the 2 root timelines won't have a _timeline; they're always active.
+				startTime = this._startTime,
+				rawTime;
+			return (!tl || (!this._gc && !this._paused && tl.isActive() && (rawTime = tl.rawTime(true)) >= startTime && rawTime < startTime + this.totalDuration() / this._timeScale - 0.0000001));
+		};
+
+		p._enabled = function (enabled, ignoreTimeline) {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			this._gc = !enabled;
+			this._active = this.isActive();
+			if (ignoreTimeline !== true) {
+				if (enabled && !this.timeline) {
+					this._timeline.add(this, this._startTime - this._delay);
+				} else if (!enabled && this.timeline) {
+					this._timeline._remove(this, true);
+				}
+			}
+			return false;
+		};
+
+
+		p._kill = function(vars, target) {
+			return this._enabled(false, false);
+		};
+
+		p.kill = function(vars, target) {
+			this._kill(vars, target);
+			return this;
+		};
+
+		p._uncache = function(includeSelf) {
+			var tween = includeSelf ? this : this.timeline;
+			while (tween) {
+				tween._dirty = true;
+				tween = tween.timeline;
+			}
+			return this;
+		};
+
+		p._swapSelfInParams = function(params) {
+			var i = params.length,
+				copy = params.concat();
+			while (--i > -1) {
+				if (params[i] === "{self}") {
+					copy[i] = this;
+				}
+			}
+			return copy;
+		};
+
+		p._callback = function(type) {
+			var v = this.vars,
+				callback = v[type],
+				params = v[type + "Params"],
+				scope = v[type + "Scope"] || v.callbackScope || this,
+				l = params ? params.length : 0;
+			switch (l) { //speed optimization; call() is faster than apply() so use it when there are only a few parameters (which is by far most common). Previously we simply did var v = this.vars; v[type].apply(v[type + "Scope"] || v.callbackScope || this, v[type + "Params"] || _blankArray);
+				case 0: callback.call(scope); break;
+				case 1: callback.call(scope, params[0]); break;
+				case 2: callback.call(scope, params[0], params[1]); break;
+				default: callback.apply(scope, params);
+			}
+		};
+
+//----Animation getters/setters --------------------------------------------------------
+
+		p.eventCallback = function(type, callback, params, scope) {
+			if ((type || "").substr(0,2) === "on") {
+				var v = this.vars;
+				if (arguments.length === 1) {
+					return v[type];
+				}
+				if (callback == null) {
+					delete v[type];
+				} else {
+					v[type] = callback;
+					v[type + "Params"] = (_isArray(params) && params.join("").indexOf("{self}") !== -1) ? this._swapSelfInParams(params) : params;
+					v[type + "Scope"] = scope;
+				}
+				if (type === "onUpdate") {
+					this._onUpdate = callback;
+				}
+			}
+			return this;
+		};
+
+		p.delay = function(value) {
+			if (!arguments.length) {
+				return this._delay;
+			}
+			if (this._timeline.smoothChildTiming) {
+				this.startTime( this._startTime + value - this._delay );
+			}
+			this._delay = value;
+			return this;
+		};
+
+		p.duration = function(value) {
+			if (!arguments.length) {
+				this._dirty = false;
+				return this._duration;
+			}
+			this._duration = this._totalDuration = value;
+			this._uncache(true); //true in case it's a TweenMax or TimelineMax that has a repeat - we'll need to refresh the totalDuration.
+			if (this._timeline.smoothChildTiming) if (this._time > 0) if (this._time < this._duration) if (value !== 0) {
+				this.totalTime(this._totalTime * (value / this._duration), true);
+			}
+			return this;
+		};
+
+		p.totalDuration = function(value) {
+			this._dirty = false;
+			return (!arguments.length) ? this._totalDuration : this.duration(value);
+		};
+
+		p.time = function(value, suppressEvents) {
+			if (!arguments.length) {
+				return this._time;
+			}
+			if (this._dirty) {
+				this.totalDuration();
+			}
+			return this.totalTime((value > this._duration) ? this._duration : value, suppressEvents);
+		};
+
+		p.totalTime = function(time, suppressEvents, uncapped) {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			if (!arguments.length) {
+				return this._totalTime;
+			}
+			if (this._timeline) {
+				if (time < 0 && !uncapped) {
+					time += this.totalDuration();
+				}
+				if (this._timeline.smoothChildTiming) {
+					if (this._dirty) {
+						this.totalDuration();
+					}
+					var totalDuration = this._totalDuration,
+						tl = this._timeline;
+					if (time > totalDuration && !uncapped) {
+						time = totalDuration;
+					}
+					this._startTime = (this._paused ? this._pauseTime : tl._time) - ((!this._reversed ? time : totalDuration - time) / this._timeScale);
+					if (!tl._dirty) { //for performance improvement. If the parent's cache is already dirty, it already took care of marking the ancestors as dirty too, so skip the function call here.
+						this._uncache(false);
+					}
+					//in case any of the ancestor timelines had completed but should now be enabled, we should reset their totalTime() which will also ensure that they're lined up properly and enabled. Skip for animations that are on the root (wasteful). Example: a TimelineLite.exportRoot() is performed when there's a paused tween on the root, the export will not complete until that tween is unpaused, but imagine a child gets restarted later, after all [unpaused] tweens have completed. The startTime of that child would get pushed out, but one of the ancestors may have completed.
+					if (tl._timeline) {
+						while (tl._timeline) {
+							if (tl._timeline._time !== (tl._startTime + tl._totalTime) / tl._timeScale) {
+								tl.totalTime(tl._totalTime, true);
+							}
+							tl = tl._timeline;
+						}
+					}
+				}
+				if (this._gc) {
+					this._enabled(true, false);
+				}
+				if (this._totalTime !== time || this._duration === 0) {
+					if (_lazyTweens.length) {
+						_lazyRender();
+					}
+					this.render(time, suppressEvents, false);
+					if (_lazyTweens.length) { //in case rendering caused any tweens to lazy-init, we should render them because typically when someone calls seek() or time() or progress(), they expect an immediate render.
+						_lazyRender();
+					}
+				}
+			}
+			return this;
+		};
+
+		p.progress = p.totalProgress = function(value, suppressEvents) {
+			var duration = this.duration();
+			return (!arguments.length) ? (duration ? this._time / duration : this.ratio) : this.totalTime(duration * value, suppressEvents);
+		};
+
+		p.startTime = function(value) {
+			if (!arguments.length) {
+				return this._startTime;
+			}
+			if (value !== this._startTime) {
+				this._startTime = value;
+				if (this.timeline) if (this.timeline._sortChildren) {
+					this.timeline.add(this, value - this._delay); //ensures that any necessary re-sequencing of Animations in the timeline occurs to make sure the rendering order is correct.
+				}
+			}
+			return this;
+		};
+
+		p.endTime = function(includeRepeats) {
+			return this._startTime + ((includeRepeats != false) ? this.totalDuration() : this.duration()) / this._timeScale;
+		};
+
+		p.timeScale = function(value) {
+			if (!arguments.length) {
+				return this._timeScale;
+			}
+			value = value || _tinyNum; //can't allow zero because it'll throw the math off
+			if (this._timeline && this._timeline.smoothChildTiming) {
+				var pauseTime = this._pauseTime,
+					t = (pauseTime || pauseTime === 0) ? pauseTime : this._timeline.totalTime();
+				this._startTime = t - ((t - this._startTime) * this._timeScale / value);
+			}
+			this._timeScale = value;
+			return this._uncache(false);
+		};
+
+		p.reversed = function(value) {
+			if (!arguments.length) {
+				return this._reversed;
+			}
+			if (value != this._reversed) {
+				this._reversed = value;
+				this.totalTime(((this._timeline && !this._timeline.smoothChildTiming) ? this.totalDuration() - this._totalTime : this._totalTime), true);
+			}
+			return this;
+		};
+
+		p.paused = function(value) {
+			if (!arguments.length) {
+				return this._paused;
+			}
+			var tl = this._timeline,
+				raw, elapsed;
+			if (value != this._paused) if (tl) {
+				if (!_tickerActive && !value) {
+					_ticker.wake();
+				}
+				raw = tl.rawTime();
+				elapsed = raw - this._pauseTime;
+				if (!value && tl.smoothChildTiming) {
+					this._startTime += elapsed;
+					this._uncache(false);
+				}
+				this._pauseTime = value ? raw : null;
+				this._paused = value;
+				this._active = this.isActive();
+				if (!value && elapsed !== 0 && this._initted && this.duration()) {
+					raw = tl.smoothChildTiming ? this._totalTime : (raw - this._startTime) / this._timeScale;
+					this.render(raw, (raw === this._totalTime), true); //in case the target's properties changed via some other tween or manual update by the user, we should force a render.
+				}
+			}
+			if (this._gc && !value) {
+				this._enabled(true, false);
+			}
+			return this;
+		};
+
+
+/*
+ * ----------------------------------------------------------------
+ * SimpleTimeline
+ * ----------------------------------------------------------------
+ */
+		var SimpleTimeline = _class("core.SimpleTimeline", function(vars) {
+			Animation.call(this, 0, vars);
+			this.autoRemoveChildren = this.smoothChildTiming = true;
+		});
+
+		p = SimpleTimeline.prototype = new Animation();
+		p.constructor = SimpleTimeline;
+		p.kill()._gc = false;
+		p._first = p._last = p._recent = null;
+		p._sortChildren = false;
+
+		p.add = p.insert = function(child, position, align, stagger) {
+			var prevTween, st;
+			child._startTime = Number(position || 0) + child._delay;
+			if (child._paused) if (this !== child._timeline) { //we only adjust the _pauseTime if it wasn't in this timeline already. Remember, sometimes a tween will be inserted again into the same timeline when its startTime is changed so that the tweens in the TimelineLite/Max are re-ordered properly in the linked list (so everything renders in the proper order).
+				child._pauseTime = child._startTime + ((this.rawTime() - child._startTime) / child._timeScale);
+			}
+			if (child.timeline) {
+				child.timeline._remove(child, true); //removes from existing timeline so that it can be properly added to this one.
+			}
+			child.timeline = child._timeline = this;
+			if (child._gc) {
+				child._enabled(true, true);
+			}
+			prevTween = this._last;
+			if (this._sortChildren) {
+				st = child._startTime;
+				while (prevTween && prevTween._startTime > st) {
+					prevTween = prevTween._prev;
+				}
+			}
+			if (prevTween) {
+				child._next = prevTween._next;
+				prevTween._next = child;
+			} else {
+				child._next = this._first;
+				this._first = child;
+			}
+			if (child._next) {
+				child._next._prev = child;
+			} else {
+				this._last = child;
+			}
+			child._prev = prevTween;
+			this._recent = child;
+			if (this._timeline) {
+				this._uncache(true);
+			}
+			return this;
+		};
+
+		p._remove = function(tween, skipDisable) {
+			if (tween.timeline === this) {
+				if (!skipDisable) {
+					tween._enabled(false, true);
+				}
+
+				if (tween._prev) {
+					tween._prev._next = tween._next;
+				} else if (this._first === tween) {
+					this._first = tween._next;
+				}
+				if (tween._next) {
+					tween._next._prev = tween._prev;
+				} else if (this._last === tween) {
+					this._last = tween._prev;
+				}
+				tween._next = tween._prev = tween.timeline = null;
+				if (tween === this._recent) {
+					this._recent = this._last;
+				}
+
+				if (this._timeline) {
+					this._uncache(true);
+				}
+			}
+			return this;
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			var tween = this._first,
+				next;
+			this._totalTime = this._time = this._rawPrevTime = time;
+			while (tween) {
+				next = tween._next; //record it here because the value could change after rendering...
+				if (tween._active || (time >= tween._startTime && !tween._paused && !tween._gc)) {
+					if (!tween._reversed) {
+						tween.render((time - tween._startTime) * tween._timeScale, suppressEvents, force);
+					} else {
+						tween.render(((!tween._dirty) ? tween._totalDuration : tween.totalDuration()) - ((time - tween._startTime) * tween._timeScale), suppressEvents, force);
+					}
+				}
+				tween = next;
+			}
+		};
+
+		p.rawTime = function() {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			return this._totalTime;
+		};
+
+/*
+ * ----------------------------------------------------------------
+ * TweenLite
+ * ----------------------------------------------------------------
+ */
+		var TweenLite = _class("TweenLite", function(target, duration, vars) {
+				Animation.call(this, duration, vars);
+				this.render = TweenLite.prototype.render; //speed optimization (avoid prototype lookup on this "hot" method)
+
+				if (target == null) {
+					throw "Cannot tween a null target.";
+				}
+
+				this.target = target = (typeof(target) !== "string") ? target : TweenLite.selector(target) || target;
+
+				var isSelector = (target.jquery || (target.length && target !== window && target[0] && (target[0] === window || (target[0].nodeType && target[0].style && !target.nodeType)))),
+					overwrite = this.vars.overwrite,
+					i, targ, targets;
+
+				this._overwrite = overwrite = (overwrite == null) ? _overwriteLookup[TweenLite.defaultOverwrite] : (typeof(overwrite) === "number") ? overwrite >> 0 : _overwriteLookup[overwrite];
+
+				if ((isSelector || target instanceof Array || (target.push && _isArray(target))) && typeof(target[0]) !== "number") {
+					this._targets = targets = _slice(target);  //don't use Array.prototype.slice.call(target, 0) because that doesn't work in IE8 with a NodeList that's returned by querySelectorAll()
+					this._propLookup = [];
+					this._siblings = [];
+					for (i = 0; i < targets.length; i++) {
+						targ = targets[i];
+						if (!targ) {
+							targets.splice(i--, 1);
+							continue;
+						} else if (typeof(targ) === "string") {
+							targ = targets[i--] = TweenLite.selector(targ); //in case it's an array of strings
+							if (typeof(targ) === "string") {
+								targets.splice(i+1, 1); //to avoid an endless loop (can't imagine why the selector would return a string, but just in case)
+							}
+							continue;
+						} else if (targ.length && targ !== window && targ[0] && (targ[0] === window || (targ[0].nodeType && targ[0].style && !targ.nodeType))) { //in case the user is passing in an array of selector objects (like jQuery objects), we need to check one more level and pull things out if necessary. Also note that <select> elements pass all the criteria regarding length and the first child having style, so we must also check to ensure the target isn't an HTML node itself.
+							targets.splice(i--, 1);
+							this._targets = targets = targets.concat(_slice(targ));
+							continue;
+						}
+						this._siblings[i] = _register(targ, this, false);
+						if (overwrite === 1) if (this._siblings[i].length > 1) {
+							_applyOverwrite(targ, this, null, 1, this._siblings[i]);
+						}
+					}
+
+				} else {
+					this._propLookup = {};
+					this._siblings = _register(target, this, false);
+					if (overwrite === 1) if (this._siblings.length > 1) {
+						_applyOverwrite(target, this, null, 1, this._siblings);
+					}
+				}
+				if (this.vars.immediateRender || (duration === 0 && this._delay === 0 && this.vars.immediateRender !== false)) {
+					this._time = -_tinyNum; //forces a render without having to set the render() "force" parameter to true because we want to allow lazying by default (using the "force" parameter always forces an immediate full render)
+					this.render(Math.min(0, -this._delay)); //in case delay is negative
+				}
+			}, true),
+			_isSelector = function(v) {
+				return (v && v.length && v !== window && v[0] && (v[0] === window || (v[0].nodeType && v[0].style && !v.nodeType))); //we cannot check "nodeType" if the target is window from within an iframe, otherwise it will trigger a security error in some browsers like Firefox.
+			},
+			_autoCSS = function(vars, target) {
+				var css = {},
+					p;
+				for (p in vars) {
+					if (!_reservedProps[p] && (!(p in target) || p === "transform" || p === "x" || p === "y" || p === "width" || p === "height" || p === "className" || p === "border") && (!_plugins[p] || (_plugins[p] && _plugins[p]._autoCSS))) { //note: <img> elements contain read-only "x" and "y" properties. We should also prioritize editing css width/height rather than the element's properties.
+						css[p] = vars[p];
+						delete vars[p];
+					}
+				}
+				vars.css = css;
+			};
+
+		p = TweenLite.prototype = new Animation();
+		p.constructor = TweenLite;
+		p.kill()._gc = false;
+
+//----TweenLite defaults, overwrite management, and root updates ----------------------------------------------------
+
+		p.ratio = 0;
+		p._firstPT = p._targets = p._overwrittenProps = p._startAt = null;
+		p._notifyPluginsOfEnabled = p._lazy = false;
+
+		TweenLite.version = "1.20.2";
+		TweenLite.defaultEase = p._ease = new Ease(null, null, 1, 1);
+		TweenLite.defaultOverwrite = "auto";
+		TweenLite.ticker = _ticker;
+		TweenLite.autoSleep = 120;
+		TweenLite.lagSmoothing = function(threshold, adjustedLag) {
+			_ticker.lagSmoothing(threshold, adjustedLag);
+		};
+
+		TweenLite.selector = window.$ || window.jQuery || function(e) {
+			var selector = window.$ || window.jQuery;
+			if (selector) {
+				TweenLite.selector = selector;
+				return selector(e);
+			}
+			return (typeof(_doc) === "undefined") ? e : (_doc.querySelectorAll ? _doc.querySelectorAll(e) : _doc.getElementById((e.charAt(0) === "#") ? e.substr(1) : e));
+		};
+
+		var _lazyTweens = [],
+			_lazyLookup = {},
+			_numbersExp = /(?:(-|-=|\+=)?\d*\.?\d*(?:e[\-+]?\d+)?)[0-9]/ig,
+			_relExp = /[\+-]=-?[\.\d]/,
+			//_nonNumbersExp = /(?:([\-+](?!(\d|=)))|[^\d\-+=e]|(e(?![\-+][\d])))+/ig,
+			_setRatio = function(v) {
+				var pt = this._firstPT,
+					min = 0.000001,
+					val;
+				while (pt) {
+					val = !pt.blob ? pt.c * v + pt.s : (v === 1 && this.end) ? this.end : v ? this.join("") : this.start;
+					if (pt.m) {
+						val = pt.m(val, this._target || pt.t);
+					} else if (val < min) if (val > -min && !pt.blob) { //prevents issues with converting very small numbers to strings in the browser
+						val = 0;
+					}
+					if (!pt.f) {
+						pt.t[pt.p] = val;
+					} else if (pt.fp) {
+						pt.t[pt.p](pt.fp, val);
+					} else {
+						pt.t[pt.p](val);
+					}
+					pt = pt._next;
+				}
+			},
+			//compares two strings (start/end), finds the numbers that are different and spits back an array representing the whole value but with the changing values isolated as elements. For example, "rgb(0,0,0)" and "rgb(100,50,0)" would become ["rgb(", 0, ",", 50, ",0)"]. Notice it merges the parts that are identical (performance optimization). The array also has a linked list of PropTweens attached starting with _firstPT that contain the tweening data (t, p, s, c, f, etc.). It also stores the starting value as a "start" property so that we can revert to it if/when necessary, like when a tween rewinds fully. If the quantity of numbers differs between the start and end, it will always prioritize the end value(s). The pt parameter is optional - it's for a PropTween that will be appended to the end of the linked list and is typically for actually setting the value after all of the elements have been updated (with array.join("")).
+			_blobDif = function(start, end, filter, pt) {
+				var a = [],
+					charIndex = 0,
+					s = "",
+					color = 0,
+					startNums, endNums, num, i, l, nonNumbers, currentNum;
+				a.start = start;
+				a.end = end;
+				start = a[0] = start + ""; //ensure values are strings
+				end = a[1] = end + "";
+				if (filter) {
+					filter(a); //pass an array with the starting and ending values and let the filter do whatever it needs to the values.
+					start = a[0];
+					end = a[1];
+				}
+				a.length = 0;
+				startNums = start.match(_numbersExp) || [];
+				endNums = end.match(_numbersExp) || [];
+				if (pt) {
+					pt._next = null;
+					pt.blob = 1;
+					a._firstPT = a._applyPT = pt; //apply last in the linked list (which means inserting it first)
+				}
+				l = endNums.length;
+				for (i = 0; i < l; i++) {
+					currentNum = endNums[i];
+					nonNumbers = end.substr(charIndex, end.indexOf(currentNum, charIndex)-charIndex);
+					s += (nonNumbers || !i) ? nonNumbers : ","; //note: SVG spec allows omission of comma/space when a negative sign is wedged between two numbers, like 2.5-5.3 instead of 2.5,-5.3 but when tweening, the negative value may switch to positive, so we insert the comma just in case.
+					charIndex += nonNumbers.length;
+					if (color) { //sense rgba() values and round them.
+						color = (color + 1) % 5;
+					} else if (nonNumbers.substr(-5) === "rgba(") {
+						color = 1;
+					}
+					if (currentNum === startNums[i] || startNums.length <= i) {
+						s += currentNum;
+					} else {
+						if (s) {
+							a.push(s);
+							s = "";
+						}
+						num = parseFloat(startNums[i]);
+						a.push(num);
+						a._firstPT = {_next: a._firstPT, t:a, p: a.length-1, s:num, c:((currentNum.charAt(1) === "=") ? parseInt(currentNum.charAt(0) + "1", 10) * parseFloat(currentNum.substr(2)) : (parseFloat(currentNum) - num)) || 0, f:0, m:(color && color < 4) ? Math.round : 0};
+						//note: we don't set _prev because we'll never need to remove individual PropTweens from this list.
+					}
+					charIndex += currentNum.length;
+				}
+				s += end.substr(charIndex);
+				if (s) {
+					a.push(s);
+				}
+				a.setRatio = _setRatio;
+				if (_relExp.test(end)) { //if the end string contains relative values, delete it so that on the final render (in _setRatio()), we don't actually set it to the string with += or -= characters (forces it to use the calculated value).
+					a.end = 0;
+				}
+				return a;
+			},
+			//note: "funcParam" is only necessary for function-based getters/setters that require an extra parameter like getAttribute("width") and setAttribute("width", value). In this example, funcParam would be "width". Used by AttrPlugin for example.
+			_addPropTween = function(target, prop, start, end, overwriteProp, mod, funcParam, stringFilter, index) {
+				if (typeof(end) === "function") {
+					end = end(index || 0, target);
+				}
+				var type = typeof(target[prop]),
+					getterName = (type !== "function") ? "" : ((prop.indexOf("set") || typeof(target["get" + prop.substr(3)]) !== "function") ? prop : "get" + prop.substr(3)),
+					s = (start !== "get") ? start : !getterName ? target[prop] : funcParam ? target[getterName](funcParam) : target[getterName](),
+					isRelative = (typeof(end) === "string" && end.charAt(1) === "="),
+					pt = {t:target, p:prop, s:s, f:(type === "function"), pg:0, n:overwriteProp || prop, m:(!mod ? 0 : (typeof(mod) === "function") ? mod : Math.round), pr:0, c:isRelative ? parseInt(end.charAt(0) + "1", 10) * parseFloat(end.substr(2)) : (parseFloat(end) - s) || 0},
+					blob;
+
+				if (typeof(s) !== "number" || (typeof(end) !== "number" && !isRelative)) {
+					if (funcParam || isNaN(s) || (!isRelative && isNaN(end)) || typeof(s) === "boolean" || typeof(end) === "boolean") {
+						//a blob (string that has multiple numbers in it)
+						pt.fp = funcParam;
+						blob = _blobDif(s, (isRelative ? parseFloat(pt.s) + pt.c : end), stringFilter || TweenLite.defaultStringFilter, pt);
+						pt = {t: blob, p: "setRatio", s: 0, c: 1, f: 2, pg: 0, n: overwriteProp || prop, pr: 0, m: 0}; //"2" indicates it's a Blob property tween. Needed for RoundPropsPlugin for example.
+					} else {
+						pt.s = parseFloat(s);
+						if (!isRelative) {
+							pt.c = (parseFloat(end) - pt.s) || 0;
+						}
+					}
+				}
+				if (pt.c) { //only add it to the linked list if there's a change.
+					if ((pt._next = this._firstPT)) {
+						pt._next._prev = pt;
+					}
+					this._firstPT = pt;
+					return pt;
+				}
+			},
+			_internals = TweenLite._internals = {isArray:_isArray, isSelector:_isSelector, lazyTweens:_lazyTweens, blobDif:_blobDif}, //gives us a way to expose certain private values to other GreenSock classes without contaminating tha main TweenLite object.
+			_plugins = TweenLite._plugins = {},
+			_tweenLookup = _internals.tweenLookup = {},
+			_tweenLookupNum = 0,
+			_reservedProps = _internals.reservedProps = {ease:1, delay:1, overwrite:1, onComplete:1, onCompleteParams:1, onCompleteScope:1, useFrames:1, runBackwards:1, startAt:1, onUpdate:1, onUpdateParams:1, onUpdateScope:1, onStart:1, onStartParams:1, onStartScope:1, onReverseComplete:1, onReverseCompleteParams:1, onReverseCompleteScope:1, onRepeat:1, onRepeatParams:1, onRepeatScope:1, easeParams:1, yoyo:1, immediateRender:1, repeat:1, repeatDelay:1, data:1, paused:1, reversed:1, autoCSS:1, lazy:1, onOverwrite:1, callbackScope:1, stringFilter:1, id:1, yoyoEase:1},
+			_overwriteLookup = {none:0, all:1, auto:2, concurrent:3, allOnStart:4, preexisting:5, "true":1, "false":0},
+			_rootFramesTimeline = Animation._rootFramesTimeline = new SimpleTimeline(),
+			_rootTimeline = Animation._rootTimeline = new SimpleTimeline(),
+			_nextGCFrame = 30,
+			_lazyRender = _internals.lazyRender = function() {
+				var i = _lazyTweens.length,
+					tween;
+				_lazyLookup = {};
+				while (--i > -1) {
+					tween = _lazyTweens[i];
+					if (tween && tween._lazy !== false) {
+						tween.render(tween._lazy[0], tween._lazy[1], true);
+						tween._lazy = false;
+					}
+				}
+				_lazyTweens.length = 0;
+			};
+
+		_rootTimeline._startTime = _ticker.time;
+		_rootFramesTimeline._startTime = _ticker.frame;
+		_rootTimeline._active = _rootFramesTimeline._active = true;
+		setTimeout(_lazyRender, 1); //on some mobile devices, there isn't a "tick" before code runs which means any lazy renders wouldn't run before the next official "tick".
+
+		Animation._updateRoot = TweenLite.render = function() {
+				var i, a, p;
+				if (_lazyTweens.length) { //if code is run outside of the requestAnimationFrame loop, there may be tweens queued AFTER the engine refreshed, so we need to ensure any pending renders occur before we refresh again.
+					_lazyRender();
+				}
+				_rootTimeline.render((_ticker.time - _rootTimeline._startTime) * _rootTimeline._timeScale, false, false);
+				_rootFramesTimeline.render((_ticker.frame - _rootFramesTimeline._startTime) * _rootFramesTimeline._timeScale, false, false);
+				if (_lazyTweens.length) {
+					_lazyRender();
+				}
+				if (_ticker.frame >= _nextGCFrame) { //dump garbage every 120 frames or whatever the user sets TweenLite.autoSleep to
+					_nextGCFrame = _ticker.frame + (parseInt(TweenLite.autoSleep, 10) || 120);
+					for (p in _tweenLookup) {
+						a = _tweenLookup[p].tweens;
+						i = a.length;
+						while (--i > -1) {
+							if (a[i]._gc) {
+								a.splice(i, 1);
+							}
+						}
+						if (a.length === 0) {
+							delete _tweenLookup[p];
+						}
+					}
+					//if there are no more tweens in the root timelines, or if they're all paused, make the _timer sleep to reduce load on the CPU slightly
+					p = _rootTimeline._first;
+					if (!p || p._paused) if (TweenLite.autoSleep && !_rootFramesTimeline._first && _ticker._listeners.tick.length === 1) {
+						while (p && p._paused) {
+							p = p._next;
+						}
+						if (!p) {
+							_ticker.sleep();
+						}
+					}
+				}
+			};
+
+		_ticker.addEventListener("tick", Animation._updateRoot);
+
+		var _register = function(target, tween, scrub) {
+				var id = target._gsTweenID, a, i;
+				if (!_tweenLookup[id || (target._gsTweenID = id = "t" + (_tweenLookupNum++))]) {
+					_tweenLookup[id] = {target:target, tweens:[]};
+				}
+				if (tween) {
+					a = _tweenLookup[id].tweens;
+					a[(i = a.length)] = tween;
+					if (scrub) {
+						while (--i > -1) {
+							if (a[i] === tween) {
+								a.splice(i, 1);
+							}
+						}
+					}
+				}
+				return _tweenLookup[id].tweens;
+			},
+			_onOverwrite = function(overwrittenTween, overwritingTween, target, killedProps) {
+				var func = overwrittenTween.vars.onOverwrite, r1, r2;
+				if (func) {
+					r1 = func(overwrittenTween, overwritingTween, target, killedProps);
+				}
+				func = TweenLite.onOverwrite;
+				if (func) {
+					r2 = func(overwrittenTween, overwritingTween, target, killedProps);
+				}
+				return (r1 !== false && r2 !== false);
+			},
+			_applyOverwrite = function(target, tween, props, mode, siblings) {
+				var i, changed, curTween, l;
+				if (mode === 1 || mode >= 4) {
+					l = siblings.length;
+					for (i = 0; i < l; i++) {
+						if ((curTween = siblings[i]) !== tween) {
+							if (!curTween._gc) {
+								if (curTween._kill(null, target, tween)) {
+									changed = true;
+								}
+							}
+						} else if (mode === 5) {
+							break;
+						}
+					}
+					return changed;
+				}
+				//NOTE: Add 0.0000000001 to overcome floating point errors that can cause the startTime to be VERY slightly off (when a tween's time() is set for example)
+				var startTime = tween._startTime + _tinyNum,
+					overlaps = [],
+					oCount = 0,
+					zeroDur = (tween._duration === 0),
+					globalStart;
+				i = siblings.length;
+				while (--i > -1) {
+					if ((curTween = siblings[i]) === tween || curTween._gc || curTween._paused) {
+						//ignore
+					} else if (curTween._timeline !== tween._timeline) {
+						globalStart = globalStart || _checkOverlap(tween, 0, zeroDur);
+						if (_checkOverlap(curTween, globalStart, zeroDur) === 0) {
+							overlaps[oCount++] = curTween;
+						}
+					} else if (curTween._startTime <= startTime) if (curTween._startTime + curTween.totalDuration() / curTween._timeScale > startTime) if (!((zeroDur || !curTween._initted) && startTime - curTween._startTime <= 0.0000000002)) {
+						overlaps[oCount++] = curTween;
+					}
+				}
+
+				i = oCount;
+				while (--i > -1) {
+					curTween = overlaps[i];
+					if (mode === 2) if (curTween._kill(props, target, tween)) {
+						changed = true;
+					}
+					if (mode !== 2 || (!curTween._firstPT && curTween._initted)) {
+						if (mode !== 2 && !_onOverwrite(curTween, tween)) {
+							continue;
+						}
+						if (curTween._enabled(false, false)) { //if all property tweens have been overwritten, kill the tween.
+							changed = true;
+						}
+					}
+				}
+				return changed;
+			},
+			_checkOverlap = function(tween, reference, zeroDur) {
+				var tl = tween._timeline,
+					ts = tl._timeScale,
+					t = tween._startTime;
+				while (tl._timeline) {
+					t += tl._startTime;
+					ts *= tl._timeScale;
+					if (tl._paused) {
+						return -100;
+					}
+					tl = tl._timeline;
+				}
+				t /= ts;
+				return (t > reference) ? t - reference : ((zeroDur && t === reference) || (!tween._initted && t - reference < 2 * _tinyNum)) ? _tinyNum : ((t += tween.totalDuration() / tween._timeScale / ts) > reference + _tinyNum) ? 0 : t - reference - _tinyNum;
+			};
+
+
+//---- TweenLite instance methods -----------------------------------------------------------------------------
+
+		p._init = function() {
+			var v = this.vars,
+				op = this._overwrittenProps,
+				dur = this._duration,
+				immediate = !!v.immediateRender,
+				ease = v.ease,
+				i, initPlugins, pt, p, startVars, l;
+			if (v.startAt) {
+				if (this._startAt) {
+					this._startAt.render(-1, true); //if we've run a startAt previously (when the tween instantiated), we should revert it so that the values re-instantiate correctly particularly for relative tweens. Without this, a TweenLite.fromTo(obj, 1, {x:"+=100"}, {x:"-=100"}), for example, would actually jump to +=200 because the startAt would run twice, doubling the relative change.
+					this._startAt.kill();
+				}
+				startVars = {};
+				for (p in v.startAt) { //copy the properties/values into a new object to avoid collisions, like var to = {x:0}, from = {x:500}; timeline.fromTo(e, 1, from, to).fromTo(e, 1, to, from);
+					startVars[p] = v.startAt[p];
+				}
+				startVars.overwrite = false;
+				startVars.immediateRender = true;
+				startVars.lazy = (immediate && v.lazy !== false);
+				startVars.startAt = startVars.delay = null; //no nesting of startAt objects allowed (otherwise it could cause an infinite loop).
+				startVars.onUpdate = v.onUpdate;
+				startVars.onUpdateScope = v.onUpdateScope || v.callbackScope || this;
+				this._startAt = TweenLite.to(this.target, 0, startVars);
+				if (immediate) {
+					if (this._time > 0) {
+						this._startAt = null; //tweens that render immediately (like most from() and fromTo() tweens) shouldn't revert when their parent timeline's playhead goes backward past the startTime because the initial render could have happened anytime and it shouldn't be directly correlated to this tween's startTime. Imagine setting up a complex animation where the beginning states of various objects are rendered immediately but the tween doesn't happen for quite some time - if we revert to the starting values as soon as the playhead goes backward past the tween's startTime, it will throw things off visually. Reversion should only happen in TimelineLite/Max instances where immediateRender was false (which is the default in the convenience methods like from()).
+					} else if (dur !== 0) {
+						return; //we skip initialization here so that overwriting doesn't occur until the tween actually begins. Otherwise, if you create several immediateRender:true tweens of the same target/properties to drop into a TimelineLite or TimelineMax, the last one created would overwrite the first ones because they didn't get placed into the timeline yet before the first render occurs and kicks in overwriting.
+					}
+				}
+			} else if (v.runBackwards && dur !== 0) {
+				//from() tweens must be handled uniquely: their beginning values must be rendered but we don't want overwriting to occur yet (when time is still 0). Wait until the tween actually begins before doing all the routines like overwriting. At that time, we should render at the END of the tween to ensure that things initialize correctly (remember, from() tweens go backwards)
+				if (this._startAt) {
+					this._startAt.render(-1, true);
+					this._startAt.kill();
+					this._startAt = null;
+				} else {
+					if (this._time !== 0) { //in rare cases (like if a from() tween runs and then is invalidate()-ed), immediateRender could be true but the initial forced-render gets skipped, so there's no need to force the render in this context when the _time is greater than 0
+						immediate = false;
+					}
+					pt = {};
+					for (p in v) { //copy props into a new object and skip any reserved props, otherwise onComplete or onUpdate or onStart could fire. We should, however, permit autoCSS to go through.
+						if (!_reservedProps[p] || p === "autoCSS") {
+							pt[p] = v[p];
+						}
+					}
+					pt.overwrite = 0;
+					pt.data = "isFromStart"; //we tag the tween with as "isFromStart" so that if [inside a plugin] we need to only do something at the very END of a tween, we have a way of identifying this tween as merely the one that's setting the beginning values for a "from()" tween. For example, clearProps in CSSPlugin should only get applied at the very END of a tween and without this tag, from(...{height:100, clearProps:"height", delay:1}) would wipe the height at the beginning of the tween and after 1 second, it'd kick back in.
+					pt.lazy = (immediate && v.lazy !== false);
+					pt.immediateRender = immediate; //zero-duration tweens render immediately by default, but if we're not specifically instructed to render this tween immediately, we should skip this and merely _init() to record the starting values (rendering them immediately would push them to completion which is wasteful in that case - we'd have to render(-1) immediately after)
+					this._startAt = TweenLite.to(this.target, 0, pt);
+					if (!immediate) {
+						this._startAt._init(); //ensures that the initial values are recorded
+						this._startAt._enabled(false); //no need to have the tween render on the next cycle. Disable it because we'll always manually control the renders of the _startAt tween.
+						if (this.vars.immediateRender) {
+							this._startAt = null;
+						}
+					} else if (this._time === 0) {
+						return;
+					}
+				}
+			}
+			this._ease = ease = (!ease) ? TweenLite.defaultEase : (ease instanceof Ease) ? ease : (typeof(ease) === "function") ? new Ease(ease, v.easeParams) : _easeMap[ease] || TweenLite.defaultEase;
+			if (v.easeParams instanceof Array && ease.config) {
+				this._ease = ease.config.apply(ease, v.easeParams);
+			}
+			this._easeType = this._ease._type;
+			this._easePower = this._ease._power;
+			this._firstPT = null;
+
+			if (this._targets) {
+				l = this._targets.length;
+				for (i = 0; i < l; i++) {
+					if ( this._initProps( this._targets[i], (this._propLookup[i] = {}), this._siblings[i], (op ? op[i] : null), i) ) {
+						initPlugins = true;
+					}
+				}
+			} else {
+				initPlugins = this._initProps(this.target, this._propLookup, this._siblings, op, 0);
+			}
+
+			if (initPlugins) {
+				TweenLite._onPluginEvent("_onInitAllProps", this); //reorders the array in order of priority. Uses a static TweenPlugin method in order to minimize file size in TweenLite
+			}
+			if (op) if (!this._firstPT) if (typeof(this.target) !== "function") { //if all tweening properties have been overwritten, kill the tween. If the target is a function, it's probably a delayedCall so let it live.
+				this._enabled(false, false);
+			}
+			if (v.runBackwards) {
+				pt = this._firstPT;
+				while (pt) {
+					pt.s += pt.c;
+					pt.c = -pt.c;
+					pt = pt._next;
+				}
+			}
+			this._onUpdate = v.onUpdate;
+			this._initted = true;
+		};
+
+		p._initProps = function(target, propLookup, siblings, overwrittenProps, index) {
+			var p, i, initPlugins, plugin, pt, v;
+			if (target == null) {
+				return false;
+			}
+
+			if (_lazyLookup[target._gsTweenID]) {
+				_lazyRender(); //if other tweens of the same target have recently initted but haven't rendered yet, we've got to force the render so that the starting values are correct (imagine populating a timeline with a bunch of sequential tweens and then jumping to the end)
+			}
+
+			if (!this.vars.css) if (target.style) if (target !== window && target.nodeType) if (_plugins.css) if (this.vars.autoCSS !== false) { //it's so common to use TweenLite/Max to animate the css of DOM elements, we assume that if the target is a DOM element, that's what is intended (a convenience so that users don't have to wrap things in css:{}, although we still recommend it for a slight performance boost and better specificity). Note: we cannot check "nodeType" on the window inside an iframe.
+				_autoCSS(this.vars, target);
+			}
+			for (p in this.vars) {
+				v = this.vars[p];
+				if (_reservedProps[p]) {
+					if (v) if ((v instanceof Array) || (v.push && _isArray(v))) if (v.join("").indexOf("{self}") !== -1) {
+						this.vars[p] = v = this._swapSelfInParams(v, this);
+					}
+
+				} else if (_plugins[p] && (plugin = new _plugins[p]())._onInitTween(target, this.vars[p], this, index)) {
+
+					//t - target 		[object]
+					//p - property 		[string]
+					//s - start			[number]
+					//c - change		[number]
+					//f - isFunction	[boolean]
+					//n - name			[string]
+					//pg - isPlugin 	[boolean]
+					//pr - priority		[number]
+					//m - mod           [function | 0]
+					this._firstPT = pt = {_next:this._firstPT, t:plugin, p:"setRatio", s:0, c:1, f:1, n:p, pg:1, pr:plugin._priority, m:0};
+					i = plugin._overwriteProps.length;
+					while (--i > -1) {
+						propLookup[plugin._overwriteProps[i]] = this._firstPT;
+					}
+					if (plugin._priority || plugin._onInitAllProps) {
+						initPlugins = true;
+					}
+					if (plugin._onDisable || plugin._onEnable) {
+						this._notifyPluginsOfEnabled = true;
+					}
+					if (pt._next) {
+						pt._next._prev = pt;
+					}
+
+				} else {
+					propLookup[p] = _addPropTween.call(this, target, p, "get", v, p, 0, null, this.vars.stringFilter, index);
+				}
+			}
+
+			if (overwrittenProps) if (this._kill(overwrittenProps, target)) { //another tween may have tried to overwrite properties of this tween before init() was called (like if two tweens start at the same time, the one created second will run first)
+				return this._initProps(target, propLookup, siblings, overwrittenProps, index);
+			}
+			if (this._overwrite > 1) if (this._firstPT) if (siblings.length > 1) if (_applyOverwrite(target, this, propLookup, this._overwrite, siblings)) {
+				this._kill(propLookup, target);
+				return this._initProps(target, propLookup, siblings, overwrittenProps, index);
+			}
+			if (this._firstPT) if ((this.vars.lazy !== false && this._duration) || (this.vars.lazy && !this._duration)) { //zero duration tweens don't lazy render by default; everything else does.
+				_lazyLookup[target._gsTweenID] = true;
+			}
+			return initPlugins;
+		};
+
+		p.render = function(time, suppressEvents, force) {
+			var prevTime = this._time,
+				duration = this._duration,
+				prevRawPrevTime = this._rawPrevTime,
+				isComplete, callback, pt, rawPrevTime;
+			if (time >= duration - 0.0000001 && time >= 0) { //to work around occasional floating point math artifacts.
+				this._totalTime = this._time = duration;
+				this.ratio = this._ease._calcEnd ? this._ease.getRatio(1) : 1;
+				if (!this._reversed ) {
+					isComplete = true;
+					callback = "onComplete";
+					force = (force || this._timeline.autoRemoveChildren); //otherwise, if the animation is unpaused/activated after it's already finished, it doesn't get removed from the parent timeline.
+				}
+				if (duration === 0) if (this._initted || !this.vars.lazy || force) { //zero-duration tweens are tricky because we must discern the momentum/direction of time in order to determine whether the starting values should be rendered or the ending values. If the "playhead" of its timeline goes past the zero-duration tween in the forward direction or lands directly on it, the end values should be rendered, but if the timeline's "playhead" moves past it in the backward direction (from a postitive time to a negative time), the starting values must be rendered.
+					if (this._startTime === this._timeline._duration) { //if a zero-duration tween is at the VERY end of a timeline and that timeline renders at its end, it will typically add a tiny bit of cushion to the render time to prevent rounding errors from getting in the way of tweens rendering their VERY end. If we then reverse() that timeline, the zero-duration tween will trigger its onReverseComplete even though technically the playhead didn't pass over it again. It's a very specific edge case we must accommodate.
+						time = 0;
+					}
+					if (prevRawPrevTime < 0 || (time <= 0 && time >= -0.0000001) || (prevRawPrevTime === _tinyNum && this.data !== "isPause")) if (prevRawPrevTime !== time) { //note: when this.data is "isPause", it's a callback added by addPause() on a timeline that we should not be triggered when LEAVING its exact start time. In other words, tl.addPause(1).play(1) shouldn't pause.
+						force = true;
+						if (prevRawPrevTime > _tinyNum) {
+							callback = "onReverseComplete";
+						}
+					}
+					this._rawPrevTime = rawPrevTime = (!suppressEvents || time || prevRawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+				}
+
+			} else if (time < 0.0000001) { //to work around occasional floating point math artifacts, round super small values to 0.
+				this._totalTime = this._time = 0;
+				this.ratio = this._ease._calcEnd ? this._ease.getRatio(0) : 0;
+				if (prevTime !== 0 || (duration === 0 && prevRawPrevTime > 0)) {
+					callback = "onReverseComplete";
+					isComplete = this._reversed;
+				}
+				if (time < 0) {
+					this._active = false;
+					if (duration === 0) if (this._initted || !this.vars.lazy || force) { //zero-duration tweens are tricky because we must discern the momentum/direction of time in order to determine whether the starting values should be rendered or the ending values. If the "playhead" of its timeline goes past the zero-duration tween in the forward direction or lands directly on it, the end values should be rendered, but if the timeline's "playhead" moves past it in the backward direction (from a postitive time to a negative time), the starting values must be rendered.
+						if (prevRawPrevTime >= 0 && !(prevRawPrevTime === _tinyNum && this.data === "isPause")) {
+							force = true;
+						}
+						this._rawPrevTime = rawPrevTime = (!suppressEvents || time || prevRawPrevTime === time) ? time : _tinyNum; //when the playhead arrives at EXACTLY time 0 (right on top) of a zero-duration tween, we need to discern if events are suppressed so that when the playhead moves again (next time), it'll trigger the callback. If events are NOT suppressed, obviously the callback would be triggered in this render. Basically, the callback should fire either when the playhead ARRIVES or LEAVES this exact spot, not both. Imagine doing a timeline.seek(0) and there's a callback that sits at 0. Since events are suppressed on that seek() by default, nothing will fire, but when the playhead moves off of that position, the callback should fire. This behavior is what people intuitively expect. We set the _rawPrevTime to be a precise tiny number to indicate this scenario rather than using another property/variable which would increase memory usage. This technique is less readable, but more efficient.
+					}
+				}
+				if (!this._initted || (this._startAt && this._startAt.progress())) { //if we render the very beginning (time == 0) of a fromTo(), we must force the render (normal tweens wouldn't need to render at a time of 0 when the prevTime was also 0). This is also mandatory to make sure overwriting kicks in immediately. Also, we check progress() because if startAt has already rendered at its end, we should force a render at its beginning. Otherwise, if you put the playhead directly on top of where a fromTo({immediateRender:false}) starts, and then move it backwards, the from() won't revert its values.
+					force = true;
+				}
+			} else {
+				this._totalTime = this._time = time;
+
+				if (this._easeType) {
+					var r = time / duration, type = this._easeType, pow = this._easePower;
+					if (type === 1 || (type === 3 && r >= 0.5)) {
+						r = 1 - r;
+					}
+					if (type === 3) {
+						r *= 2;
+					}
+					if (pow === 1) {
+						r *= r;
+					} else if (pow === 2) {
+						r *= r * r;
+					} else if (pow === 3) {
+						r *= r * r * r;
+					} else if (pow === 4) {
+						r *= r * r * r * r;
+					}
+
+					if (type === 1) {
+						this.ratio = 1 - r;
+					} else if (type === 2) {
+						this.ratio = r;
+					} else if (time / duration < 0.5) {
+						this.ratio = r / 2;
+					} else {
+						this.ratio = 1 - (r / 2);
+					}
+
+				} else {
+					this.ratio = this._ease.getRatio(time / duration);
+				}
+			}
+
+			if (this._time === prevTime && !force) {
+				return;
+			} else if (!this._initted) {
+				this._init();
+				if (!this._initted || this._gc) { //immediateRender tweens typically won't initialize until the playhead advances (_time is greater than 0) in order to ensure that overwriting occurs properly. Also, if all of the tweening properties have been overwritten (which would cause _gc to be true, as set in _init()), we shouldn't continue otherwise an onStart callback could be called for example.
+					return;
+				} else if (!force && this._firstPT && ((this.vars.lazy !== false && this._duration) || (this.vars.lazy && !this._duration))) {
+					this._time = this._totalTime = prevTime;
+					this._rawPrevTime = prevRawPrevTime;
+					_lazyTweens.push(this);
+					this._lazy = [time, suppressEvents];
+					return;
+				}
+				//_ease is initially set to defaultEase, so now that init() has run, _ease is set properly and we need to recalculate the ratio. Overall this is faster than using conditional logic earlier in the method to avoid having to set ratio twice because we only init() once but renderTime() gets called VERY frequently.
+				if (this._time && !isComplete) {
+					this.ratio = this._ease.getRatio(this._time / duration);
+				} else if (isComplete && this._ease._calcEnd) {
+					this.ratio = this._ease.getRatio((this._time === 0) ? 0 : 1);
+				}
+			}
+			if (this._lazy !== false) { //in case a lazy render is pending, we should flush it because the new render is occurring now (imagine a lazy tween instantiating and then immediately the user calls tween.seek(tween.duration()), skipping to the end - the end render would be forced, and then if we didn't flush the lazy render, it'd fire AFTER the seek(), rendering it at the wrong time.
+				this._lazy = false;
+			}
+			if (!this._active) if (!this._paused && this._time !== prevTime && time >= 0) {
+				this._active = true;  //so that if the user renders a tween (as opposed to the timeline rendering it), the timeline is forced to re-render and align it with the proper time/frame on the next rendering cycle. Maybe the tween already finished but the user manually re-renders it as halfway done.
+			}
+			if (prevTime === 0) {
+				if (this._startAt) {
+					if (time >= 0) {
+						this._startAt.render(time, suppressEvents, force);
+					} else if (!callback) {
+						callback = "_dummyGS"; //if no callback is defined, use a dummy value just so that the condition at the end evaluates as true because _startAt should render AFTER the normal render loop when the time is negative. We could handle this in a more intuitive way, of course, but the render loop is the MOST important thing to optimize, so this technique allows us to avoid adding extra conditional logic in a high-frequency area.
+					}
+				}
+				if (this.vars.onStart) if (this._time !== 0 || duration === 0) if (!suppressEvents) {
+					this._callback("onStart");
+				}
+			}
+			pt = this._firstPT;
+			while (pt) {
+				if (pt.f) {
+					pt.t[pt.p](pt.c * this.ratio + pt.s);
+				} else {
+					pt.t[pt.p] = pt.c * this.ratio + pt.s;
+				}
+				pt = pt._next;
+			}
+
+			if (this._onUpdate) {
+				if (time < 0) if (this._startAt && time !== -0.0001) { //if the tween is positioned at the VERY beginning (_startTime 0) of its parent timeline, it's illegal for the playhead to go back further, so we should not render the recorded startAt values.
+					this._startAt.render(time, suppressEvents, force); //note: for performance reasons, we tuck this conditional logic inside less traveled areas (most tweens don't have an onUpdate). We'd just have it at the end before the onComplete, but the values should be updated before any onUpdate is called, so we ALSO put it here and then if it's not called, we do so later near the onComplete.
+				}
+				if (!suppressEvents) if (this._time !== prevTime || isComplete || force) {
+					this._callback("onUpdate");
+				}
+			}
+			if (callback) if (!this._gc || force) { //check _gc because there's a chance that kill() could be called in an onUpdate
+				if (time < 0 && this._startAt && !this._onUpdate && time !== -0.0001) { //-0.0001 is a special value that we use when looping back to the beginning of a repeated TimelineMax, in which case we shouldn't render the _startAt values.
+					this._startAt.render(time, suppressEvents, force);
+				}
+				if (isComplete) {
+					if (this._timeline.autoRemoveChildren) {
+						this._enabled(false, false);
+					}
+					this._active = false;
+				}
+				if (!suppressEvents && this.vars[callback]) {
+					this._callback(callback);
+				}
+				if (duration === 0 && this._rawPrevTime === _tinyNum && rawPrevTime !== _tinyNum) { //the onComplete or onReverseComplete could trigger movement of the playhead and for zero-duration tweens (which must discern direction) that land directly back on their start time, we don't want to fire again on the next render. Think of several addPause()'s in a timeline that forces the playhead to a certain spot, but what if it's already paused and another tween is tweening the "time" of the timeline? Each time it moves [forward] past that spot, it would move back, and since suppressEvents is true, it'd reset _rawPrevTime to _tinyNum so that when it begins again, the callback would fire (so ultimately it could bounce back and forth during that tween). Again, this is a very uncommon scenario, but possible nonetheless.
+					this._rawPrevTime = 0;
+				}
+			}
+		};
+
+		p._kill = function(vars, target, overwritingTween) {
+			if (vars === "all") {
+				vars = null;
+			}
+			if (vars == null) if (target == null || target === this.target) {
+				this._lazy = false;
+				return this._enabled(false, false);
+			}
+			target = (typeof(target) !== "string") ? (target || this._targets || this.target) : TweenLite.selector(target) || target;
+			var simultaneousOverwrite = (overwritingTween && this._time && overwritingTween._startTime === this._startTime && this._timeline === overwritingTween._timeline),
+				i, overwrittenProps, p, pt, propLookup, changed, killProps, record, killed;
+			if ((_isArray(target) || _isSelector(target)) && typeof(target[0]) !== "number") {
+				i = target.length;
+				while (--i > -1) {
+					if (this._kill(vars, target[i], overwritingTween)) {
+						changed = true;
+					}
+				}
+			} else {
+				if (this._targets) {
+					i = this._targets.length;
+					while (--i > -1) {
+						if (target === this._targets[i]) {
+							propLookup = this._propLookup[i] || {};
+							this._overwrittenProps = this._overwrittenProps || [];
+							overwrittenProps = this._overwrittenProps[i] = vars ? this._overwrittenProps[i] || {} : "all";
+							break;
+						}
+					}
+				} else if (target !== this.target) {
+					return false;
+				} else {
+					propLookup = this._propLookup;
+					overwrittenProps = this._overwrittenProps = vars ? this._overwrittenProps || {} : "all";
+				}
+
+				if (propLookup) {
+					killProps = vars || propLookup;
+					record = (vars !== overwrittenProps && overwrittenProps !== "all" && vars !== propLookup && (typeof(vars) !== "object" || !vars._tempKill)); //_tempKill is a super-secret way to delete a particular tweening property but NOT have it remembered as an official overwritten property (like in BezierPlugin)
+					if (overwritingTween && (TweenLite.onOverwrite || this.vars.onOverwrite)) {
+						for (p in killProps) {
+							if (propLookup[p]) {
+								if (!killed) {
+									killed = [];
+								}
+								killed.push(p);
+							}
+						}
+						if ((killed || !vars) && !_onOverwrite(this, overwritingTween, target, killed)) { //if the onOverwrite returned false, that means the user wants to override the overwriting (cancel it).
+							return false;
+						}
+					}
+
+					for (p in killProps) {
+						if ((pt = propLookup[p])) {
+							if (simultaneousOverwrite) { //if another tween overwrites this one and they both start at exactly the same time, yet this tween has already rendered once (for example, at 0.001) because it's first in the queue, we should revert the values to where they were at 0 so that the starting values aren't contaminated on the overwriting tween.
+								if (pt.f) {
+									pt.t[pt.p](pt.s);
+								} else {
+									pt.t[pt.p] = pt.s;
+								}
+								changed = true;
+							}
+							if (pt.pg && pt.t._kill(killProps)) {
+								changed = true; //some plugins need to be notified so they can perform cleanup tasks first
+							}
+							if (!pt.pg || pt.t._overwriteProps.length === 0) {
+								if (pt._prev) {
+									pt._prev._next = pt._next;
+								} else if (pt === this._firstPT) {
+									this._firstPT = pt._next;
+								}
+								if (pt._next) {
+									pt._next._prev = pt._prev;
+								}
+								pt._next = pt._prev = null;
+							}
+							delete propLookup[p];
+						}
+						if (record) {
+							overwrittenProps[p] = 1;
+						}
+					}
+					if (!this._firstPT && this._initted) { //if all tweening properties are killed, kill the tween. Without this line, if there's a tween with multiple targets and then you killTweensOf() each target individually, the tween would technically still remain active and fire its onComplete even though there aren't any more properties tweening.
+						this._enabled(false, false);
+					}
+				}
+			}
+			return changed;
+		};
+
+		p.invalidate = function() {
+			if (this._notifyPluginsOfEnabled) {
+				TweenLite._onPluginEvent("_onDisable", this);
+			}
+			this._firstPT = this._overwrittenProps = this._startAt = this._onUpdate = null;
+			this._notifyPluginsOfEnabled = this._active = this._lazy = false;
+			this._propLookup = (this._targets) ? {} : [];
+			Animation.prototype.invalidate.call(this);
+			if (this.vars.immediateRender) {
+				this._time = -_tinyNum; //forces a render without having to set the render() "force" parameter to true because we want to allow lazying by default (using the "force" parameter always forces an immediate full render)
+				this.render(Math.min(0, -this._delay)); //in case delay is negative.
+			}
+			return this;
+		};
+
+		p._enabled = function(enabled, ignoreTimeline) {
+			if (!_tickerActive) {
+				_ticker.wake();
+			}
+			if (enabled && this._gc) {
+				var targets = this._targets,
+					i;
+				if (targets) {
+					i = targets.length;
+					while (--i > -1) {
+						this._siblings[i] = _register(targets[i], this, true);
+					}
+				} else {
+					this._siblings = _register(this.target, this, true);
+				}
+			}
+			Animation.prototype._enabled.call(this, enabled, ignoreTimeline);
+			if (this._notifyPluginsOfEnabled) if (this._firstPT) {
+				return TweenLite._onPluginEvent((enabled ? "_onEnable" : "_onDisable"), this);
+			}
+			return false;
+		};
+
+
+//----TweenLite static methods -----------------------------------------------------
+
+		TweenLite.to = function(target, duration, vars) {
+			return new TweenLite(target, duration, vars);
+		};
+
+		TweenLite.from = function(target, duration, vars) {
+			vars.runBackwards = true;
+			vars.immediateRender = (vars.immediateRender != false);
+			return new TweenLite(target, duration, vars);
+		};
+
+		TweenLite.fromTo = function(target, duration, fromVars, toVars) {
+			toVars.startAt = fromVars;
+			toVars.immediateRender = (toVars.immediateRender != false && fromVars.immediateRender != false);
+			return new TweenLite(target, duration, toVars);
+		};
+
+		TweenLite.delayedCall = function(delay, callback, params, scope, useFrames) {
+			return new TweenLite(callback, 0, {delay:delay, onComplete:callback, onCompleteParams:params, callbackScope:scope, onReverseComplete:callback, onReverseCompleteParams:params, immediateRender:false, lazy:false, useFrames:useFrames, overwrite:0});
+		};
+
+		TweenLite.set = function(target, vars) {
+			return new TweenLite(target, 0, vars);
+		};
+
+		TweenLite.getTweensOf = function(target, onlyActive) {
+			if (target == null) { return []; }
+			target = (typeof(target) !== "string") ? target : TweenLite.selector(target) || target;
+			var i, a, j, t;
+			if ((_isArray(target) || _isSelector(target)) && typeof(target[0]) !== "number") {
+				i = target.length;
+				a = [];
+				while (--i > -1) {
+					a = a.concat(TweenLite.getTweensOf(target[i], onlyActive));
+				}
+				i = a.length;
+				//now get rid of any duplicates (tweens of arrays of objects could cause duplicates)
+				while (--i > -1) {
+					t = a[i];
+					j = i;
+					while (--j > -1) {
+						if (t === a[j]) {
+							a.splice(i, 1);
+						}
+					}
+				}
+			} else if (target._gsTweenID) {
+				a = _register(target).concat();
+				i = a.length;
+				while (--i > -1) {
+					if (a[i]._gc || (onlyActive && !a[i].isActive())) {
+						a.splice(i, 1);
+					}
+				}
+			}
+			return a || [];
+		};
+
+		TweenLite.killTweensOf = TweenLite.killDelayedCallsTo = function(target, onlyActive, vars) {
+			if (typeof(onlyActive) === "object") {
+				vars = onlyActive; //for backwards compatibility (before "onlyActive" parameter was inserted)
+				onlyActive = false;
+			}
+			var a = TweenLite.getTweensOf(target, onlyActive),
+				i = a.length;
+			while (--i > -1) {
+				a[i]._kill(vars, target);
+			}
+		};
+
+
+
+/*
+ * ----------------------------------------------------------------
+ * TweenPlugin   (could easily be split out as a separate file/class, but included for ease of use (so that people don't need to include another script call before loading plugins which is easy to forget)
+ * ----------------------------------------------------------------
+ */
+		var TweenPlugin = _class("plugins.TweenPlugin", function(props, priority) {
+					this._overwriteProps = (props || "").split(",");
+					this._propName = this._overwriteProps[0];
+					this._priority = priority || 0;
+					this._super = TweenPlugin.prototype;
+				}, true);
+
+		p = TweenPlugin.prototype;
+		TweenPlugin.version = "1.19.0";
+		TweenPlugin.API = 2;
+		p._firstPT = null;
+		p._addTween = _addPropTween;
+		p.setRatio = _setRatio;
+
+		p._kill = function(lookup) {
+			var a = this._overwriteProps,
+				pt = this._firstPT,
+				i;
+			if (lookup[this._propName] != null) {
+				this._overwriteProps = [];
+			} else {
+				i = a.length;
+				while (--i > -1) {
+					if (lookup[a[i]] != null) {
+						a.splice(i, 1);
+					}
+				}
+			}
+			while (pt) {
+				if (lookup[pt.n] != null) {
+					if (pt._next) {
+						pt._next._prev = pt._prev;
+					}
+					if (pt._prev) {
+						pt._prev._next = pt._next;
+						pt._prev = null;
+					} else if (this._firstPT === pt) {
+						this._firstPT = pt._next;
+					}
+				}
+				pt = pt._next;
+			}
+			return false;
+		};
+
+		p._mod = p._roundProps = function(lookup) {
+			var pt = this._firstPT,
+				val;
+			while (pt) {
+				val = lookup[this._propName] || (pt.n != null && lookup[ pt.n.split(this._propName + "_").join("") ]);
+				if (val && typeof(val) === "function") { //some properties that are very plugin-specific add a prefix named after the _propName plus an underscore, so we need to ignore that extra stuff here.
+					if (pt.f === 2) {
+						pt.t._applyPT.m = val;
+					} else {
+						pt.m = val;
+					}
+				}
+				pt = pt._next;
+			}
+		};
+
+		TweenLite._onPluginEvent = function(type, tween) {
+			var pt = tween._firstPT,
+				changed, pt2, first, last, next;
+			if (type === "_onInitAllProps") {
+				//sorts the PropTween linked list in order of priority because some plugins need to render earlier/later than others, like MotionBlurPlugin applies its effects after all x/y/alpha tweens have rendered on each frame.
+				while (pt) {
+					next = pt._next;
+					pt2 = first;
+					while (pt2 && pt2.pr > pt.pr) {
+						pt2 = pt2._next;
+					}
+					if ((pt._prev = pt2 ? pt2._prev : last)) {
+						pt._prev._next = pt;
+					} else {
+						first = pt;
+					}
+					if ((pt._next = pt2)) {
+						pt2._prev = pt;
+					} else {
+						last = pt;
+					}
+					pt = next;
+				}
+				pt = tween._firstPT = first;
+			}
+			while (pt) {
+				if (pt.pg) if (typeof(pt.t[type]) === "function") if (pt.t[type]()) {
+					changed = true;
+				}
+				pt = pt._next;
+			}
+			return changed;
+		};
+
+		TweenPlugin.activate = function(plugins) {
+			var i = plugins.length;
+			while (--i > -1) {
+				if (plugins[i].API === TweenPlugin.API) {
+					_plugins[(new plugins[i]())._propName] = plugins[i];
+				}
+			}
+			return true;
+		};
+
+		//provides a more concise way to define plugins that have no dependencies besides TweenPlugin and TweenLite, wrapping common boilerplate stuff into one function (added in 1.9.0). You don't NEED to use this to define a plugin - the old way still works and can be useful in certain (rare) situations.
+		_gsDefine.plugin = function(config) {
+			if (!config || !config.propName || !config.init || !config.API) { throw "illegal plugin definition."; }
+			var propName = config.propName,
+				priority = config.priority || 0,
+				overwriteProps = config.overwriteProps,
+				map = {init:"_onInitTween", set:"setRatio", kill:"_kill", round:"_mod", mod:"_mod", initAll:"_onInitAllProps"},
+				Plugin = _class("plugins." + propName.charAt(0).toUpperCase() + propName.substr(1) + "Plugin",
+					function() {
+						TweenPlugin.call(this, propName, priority);
+						this._overwriteProps = overwriteProps || [];
+					}, (config.global === true)),
+				p = Plugin.prototype = new TweenPlugin(propName),
+				prop;
+			p.constructor = Plugin;
+			Plugin.API = config.API;
+			for (prop in map) {
+				if (typeof(config[prop]) === "function") {
+					p[map[prop]] = config[prop];
+				}
+			}
+			Plugin.version = config.version;
+			TweenPlugin.activate([Plugin]);
+			return Plugin;
+		};
+
+
+		//now run through all the dependencies discovered and if any are missing, log that to the console as a warning. This is why it's best to have TweenLite load last - it can check all the dependencies for you.
+		a = window._gsQueue;
+		if (a) {
+			for (i = 0; i < a.length; i++) {
+				a[i]();
+			}
+			for (p in _defLookup) {
+				if (!_defLookup[p].func) {
+					window.console.log("GSAP encountered missing dependency: " + p);
+				}
+			}
+		}
+
+		_tickerActive = false; //ensures that the first official animation forces a ticker.tick() to update the time when it is instantiated
+
+})((typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window, "TweenMax");
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2)))
+
+/***/ }),
+/* 25 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+ * VERSION: 0.2.2
+ * DATE: 2017-06-19
+ * UPDATES AND DOCS AT: http://greensock.com
+ *
+ * @license Copyright (c) 2008-2017, GreenSock. All rights reserved.
+ * This work is subject to the terms at http://greensock.com/standard-license or for
+ * Club GreenSock members, the software agreement that was issued with your membership.
+ *
+ * @author: Jack Doyle, jack@greensock.com
+ **/
+var _gsScope = (typeof(module) !== "undefined" && module.exports && typeof(global) !== "undefined") ? global : this || window; //helps ensure compatibility with AMD/RequireJS and CommonJS/Node
+(_gsScope._gsQueue || (_gsScope._gsQueue = [])).push( function() {
+
+	"use strict";
+
+	_gsScope._gsDefine("easing.CustomEase", ["easing.Ease"], function(Ease) {
+
+		var _numbersExp = /(?:(-|-=|\+=)?\d*\.?\d*(?:e[\-+]?\d+)?)[0-9]/ig,
+			_svgPathExp = /[achlmqstvz]|(-?\d*\.?\d*(?:e[\-+]?\d+)?)[0-9]/ig,
+			_scientific = /[\+\-]?\d*\.?\d+e[\+\-]?\d+/ig,
+			_needsParsingExp = /[cLlsS]/g,
+			_bezierError = "CustomEase only accepts Cubic Bezier data.",
+			_bezierToPoints = function (x1, y1, x2, y2, x3, y3, x4, y4, threshold, points, index) {
+				var x12 = (x1 + x2) / 2,
+					y12 = (y1 + y2) / 2,
+					x23 = (x2 + x3) / 2,
+					y23 = (y2 + y3) / 2,
+					x34 = (x3 + x4) / 2,
+					y34 = (y3 + y4) / 2,
+					x123 = (x12 + x23) / 2,
+					y123 = (y12 + y23) / 2,
+					x234 = (x23 + x34) / 2,
+					y234 = (y23 + y34) / 2,
+					x1234 = (x123 + x234) / 2,
+					y1234 = (y123 + y234) / 2,
+					dx = x4 - x1,
+					dy = y4 - y1,
+					d2 = Math.abs((x2 - x4) * dy - (y2 - y4) * dx),
+					d3 = Math.abs((x3 - x4) * dy - (y3 - y4) * dx),
+					length;
+				if (!points) {
+					points = [{x: x1, y: y1}, {x: x4, y: y4}];
+					index = 1;
+				}
+				points.splice(index || points.length - 1, 0, {x: x1234, y: y1234});
+				if ((d2 + d3) * (d2 + d3) > threshold * (dx * dx + dy * dy)) {
+					length = points.length;
+					_bezierToPoints(x1, y1, x12, y12, x123, y123, x1234, y1234, threshold, points, index);
+					_bezierToPoints(x1234, y1234, x234, y234, x34, y34, x4, y4, threshold, points, index + 1 + (points.length - length));
+				}
+				return points;
+			},
+
+			_pathDataToBezier = function (d) {
+				var a = (d + "").replace(_scientific, function (m) {
+							var n = +m;
+							return (n < 0.0001 && n > -0.0001) ? 0 : n;
+						}).match(_svgPathExp) || [], //some authoring programs spit out very small numbers in scientific notation like "1e-5", so make sure we round that down to 0 first.
+					path = [],
+					relativeX = 0,
+					relativeY = 0,
+					elements = a.length,
+					l = 2,
+					i, x, y, command, isRelative, segment, startX, startY, prevCommand, difX, difY;
+				for (i = 0; i < elements; i++) {
+					prevCommand = command;
+					if (isNaN(a[i])) {
+						command = a[i].toUpperCase();
+						isRelative = (command !== a[i]); //lower case means relative
+					} else { //commands like "C" can be strung together without any new command characters between.
+						i--;
+					}
+					x = +a[i + 1];
+					y = +a[i + 2];
+					if (isRelative) {
+						x += relativeX;
+						y += relativeY;
+					}
+					if (!i) {
+						startX = x;
+						startY = y;
+					}
+					if (command === "M") {
+						if (segment && segment.length < 8) { //if the path data was funky and just had a M with no actual drawing anywhere, skip it.
+							path.length -= 1;
+							l = 0;
+						}
+						relativeX = startX = x;
+						relativeY = startY = y;
+						segment = [x, y];
+						l = 2;
+						path.push(segment);
+						i += 2;
+						command = "L"; //an "M" with more than 2 values gets interpreted as "lineTo" commands ("L").
+
+					} else if (command === "C") {
+						if (!segment) {
+							segment = [0, 0];
+						}
+						segment[l++] = x;
+						segment[l++] = y;
+						if (!isRelative) {
+							relativeX = relativeY = 0;
+						}
+						segment[l++] = relativeX + a[i + 3] * 1; //note: "*1" is just a fast/short way to cast the value as a Number. WAAAY faster in Chrome, slightly slower in Firefox.
+						segment[l++] = relativeY + a[i + 4] * 1;
+						segment[l++] = relativeX = relativeX + a[i + 5] * 1;
+						segment[l++] = relativeY = relativeY + a[i + 6] * 1;
+						i += 6;
+
+					} else if (command === "S") {
+						if (prevCommand === "C" || prevCommand === "S") {
+							difX = relativeX - segment[l - 4];
+							difY = relativeY - segment[l - 3];
+							segment[l++] = relativeX + difX;
+							segment[l++] = relativeY + difY;
+						} else {
+							segment[l++] = relativeX;
+							segment[l++] = relativeY;
+						}
+						segment[l++] = x;
+						segment[l++] = y;
+						if (!isRelative) {
+							relativeX = relativeY = 0;
+						}
+						segment[l++] = relativeX = relativeX + a[i + 3] * 1;
+						segment[l++] = relativeY = relativeY + a[i + 4] * 1;
+						i += 4;
+
+					} else if (command === "L" || command === "Z") {
+						if (command === "Z") {
+							x = startX;
+							y = startY;
+							segment.closed = true;
+						}
+						if (command === "L" || Math.abs(relativeX - x) > 0.5 || Math.abs(relativeY - y) > 0.5) {
+							segment[l++] = relativeX + (x - relativeX) / 3;
+							segment[l++] = relativeY + (y - relativeY) / 3;
+							segment[l++] = relativeX + (x - relativeX) * 2 / 3;
+							segment[l++] = relativeY + (y - relativeY) * 2 / 3;
+							segment[l++] = x;
+							segment[l++] = y;
+							if (command === "L") {
+								i += 2;
+							}
+						}
+						relativeX = x;
+						relativeY = y;
+					} else {
+						throw _bezierError;
+					}
+
+				}
+				return path[0];
+			},
+
+			_findMinimum = function (values) {
+				var l = values.length,
+					min = 999999999999,
+					i;
+				for (i = 1; i < l; i += 6) {
+					if (+values[i] < min) {
+						min = +values[i];
+					}
+				}
+				return min;
+			},
+
+			_normalize = function (values, height, originY) { //takes all the points and translates/scales them so that the x starts at 0 and ends at 1.
+				if (!originY && originY !== 0) {
+					originY = Math.max(+values[values.length-1], +values[1]);
+				}
+				var tx = +values[0] * -1,
+					ty = -originY,
+					l = values.length,
+					sx = 1 / (+values[l - 2] + tx),
+					sy = -height || ((Math.abs(+values[l - 1] - +values[1]) < 0.01 * (+values[l - 2] - +values[0])) ? _findMinimum(values) + ty : +values[l - 1] + ty),
+					i;
+				if (sy) { //typically y ends at 1 (so that the end values are reached)
+					sy = 1 / sy;
+				} else { //in case the ease returns to its beginning value, scale everything proportionally
+					sy = -sx;
+				}
+				for (i = 0; i < l; i += 2) {
+					values[i] = (+values[i] + tx) * sx;
+					values[i + 1] = (+values[i + 1] + ty) * sy;
+				}
+			},
+
+			_getRatio = function (p) {
+				var point = this.lookup[(p * this.l) | 0] || this.lookup[this.l - 1];
+				if (point.nx < p) {
+					point = point.n;
+				}
+				return point.y + ((p - point.x) / point.cx) * point.cy;
+			},
+
+
+			CustomEase = function (id, data, config) {
+				this._calcEnd = true;
+				this.id = id;
+				if (id) {
+					Ease.map[id] = this;
+				}
+				this.getRatio = _getRatio; //speed optimization, faster lookups.
+				this.setData(data, config);
+			},
+			p = CustomEase.prototype = new Ease();
+
+		p.constructor = CustomEase;
+
+		p.setData = function(data, config) {
+			data = data || "0,0,1,1";
+			var values = data.match(_numbersExp),
+				closest = 1,
+				points = [],
+				l, a1, a2, i, inc, j, point, prevPoint, p, precision;
+			config = config || {};
+			precision = config.precision || 1;
+			this.data = data;
+			this.lookup = [];
+			this.points = points;
+			this.fast = (precision <= 1);
+			if (_needsParsingExp.test(data) || (data.indexOf("M") !== -1 && data.indexOf("C") === -1)) {
+				values = _pathDataToBezier(data);
+			}
+			l = values.length;
+			if (l === 4) {
+				values.unshift(0, 0);
+				values.push(1, 1);
+				l = 8;
+			} else if ((l - 2) % 6) {
+				throw _bezierError;
+			}
+			if (+values[0] !== 0 || +values[l - 2] !== 1) {
+				_normalize(values, config.height, config.originY);
+			}
+
+			this.rawBezier = values;
+
+			for (i = 2; i < l; i += 6) {
+				a1 = {x: +values[i - 2], y: +values[i - 1]};
+				a2 = {x: +values[i + 4], y: +values[i + 5]};
+				points.push(a1, a2);
+				_bezierToPoints(a1.x, a1.y, +values[i], +values[i + 1], +values[i + 2], +values[i + 3], a2.x, a2.y, 1 / (precision * 200000), points, points.length - 1);
+			}
+			l = points.length;
+			for (i = 0; i < l; i++) {
+				point = points[i];
+				prevPoint = points[i - 1] || point;
+				if (point.x > prevPoint.x || (prevPoint.y !== point.y && prevPoint.x === point.x) || point === prevPoint) { //if a point goes BACKWARD in time or is a duplicate, just drop it.
+					prevPoint.cx = point.x - prevPoint.x; //change in x between this point and the next point (performance optimization)
+					prevPoint.cy = point.y - prevPoint.y;
+					prevPoint.n = point;
+					prevPoint.nx = point.x; //next point's x value (performance optimization, making lookups faster in getRatio()). Remember, the lookup will always land on a spot where it's either this point or the very next one (never beyond that)
+					if (this.fast && i > 1 && Math.abs(prevPoint.cy / prevPoint.cx - points[i - 2].cy / points[i - 2].cx) > 2) { //if there's a sudden change in direction, prioritize accuracy over speed. Like a bounce ease - you don't want to risk the sampling chunks landing on each side of the bounce anchor and having it clipped off.
+						this.fast = false;
+					}
+					if (prevPoint.cx < closest) {
+						if (!prevPoint.cx) {
+							prevPoint.cx = 0.001; //avoids math problems in getRatio() (dividing by zero)
+							if (i === l - 1) { //in case the final segment goes vertical RIGHT at the end, make sure we end at the end.
+								prevPoint.x -= 0.001;
+								closest = Math.min(closest, 0.001);
+								this.fast = false;
+							}
+						} else {
+							closest = prevPoint.cx;
+						}
+					}
+				} else {
+					points.splice(i--, 1);
+					l--;
+				}
+			}
+			l = (1 / closest + 1) | 0;
+			this.l = l; //record for speed optimization
+			inc = 1 / l;
+			j = 0;
+			point = points[0];
+			if (this.fast) {
+				for (i = 0; i < l; i++) { //for fastest lookups, we just sample along the path at equal x (time) distance. Uses more memory and is slightly less accurate for anchors that don't land on the sampling points, but for the vast majority of eases it's excellent (and fast).
+					p = i * inc;
+					if (point.nx < p) {
+						point = points[++j];
+					}
+					a1 = point.y + ((p - point.x) / point.cx) * point.cy;
+					this.lookup[i] = {x: p, cx: inc, y: a1, cy: 0, nx: 9};
+					if (i) {
+						this.lookup[i - 1].cy = a1 - this.lookup[i - 1].y;
+					}
+				}
+				this.lookup[l - 1].cy = points[points.length - 1].y - a1;
+			} else { //this option is more accurate, ensuring that EVERY anchor is hit perfectly. Clipping across a bounce, for example, would never happen.
+				for (i = 0; i < l; i++) { //build a lookup table based on the smallest distance so that we can instantly find the appropriate point (well, it'll either be that point or the very next one). We'll look up based on the linear progress. So it's it's 0.5 and the lookup table has 100 elements, it'd be like lookup[Math.floor(0.5 * 100)]
+					if (point.nx < i * inc) {
+						point = points[++j];
+					}
+					this.lookup[i] = point;
+				}
+
+				if (j < points.length - 1) {
+					this.lookup[i-1] = points[points.length-2];
+				}
+			}
+			this._calcEnd = (points[points.length-1].y !== 1 || points[0].y !== 0); //ensures that we don't run into floating point errors. As long as we're starting at 0 and ending at 1, tell GSAP to skip the final calculation and use 0/1 as the factor.
+			return this;
+		};
+
+		p.getRatio = _getRatio;
+
+		p.getSVGData = function(config) {
+			return CustomEase.getSVGData(this, config);
+		};
+
+		CustomEase.create = function (id, data, config) {
+			return new CustomEase(id, data, config);
+		};
+
+		CustomEase.version = "0.2.2";
+
+		CustomEase.bezierToPoints = _bezierToPoints;
+		CustomEase.get = function (id) {
+			return Ease.map[id];
+		};
+		CustomEase.getSVGData = function(ease, config) {
+			config = config || {};
+			var rnd = 1000,
+				width = config.width || 100,
+				height = config.height || 100,
+				x = config.x || 0,
+				y = (config.y || 0) + height,
+				e = config.path,
+				a, slope, i, inc, tx, ty, precision, threshold, prevX, prevY;
+			if (config.invert) {
+				height = -height;
+				y = 0;
+			}
+			ease = ease.getRatio ? ease : Ease.map[ease] || console.log("No ease found: ", ease);
+			if (!ease.rawBezier) {
+				a = ["M" + x + "," + y];
+				precision = Math.max(5, (config.precision || 1) * 200);
+				inc = 1 / precision;
+				precision += 2;
+				threshold = 5 / precision;
+				prevX = (((x + inc * width) * rnd) | 0) / rnd;
+				prevY = (((y + ease.getRatio(inc) * -height) * rnd) | 0) / rnd;
+				slope = (prevY - y) / (prevX - x);
+				for (i = 2; i < precision; i++) {
+					tx = (((x + i * inc * width) * rnd) | 0) / rnd;
+					ty = (((y + ease.getRatio(i * inc) * -height) * rnd) | 0) / rnd;
+					if (Math.abs((ty - prevY) / (tx - prevX) - slope) > threshold || i === precision - 1) { //only add points when the slope changes beyond the threshold
+						a.push(prevX + "," + prevY);
+						slope = (ty - prevY) / (tx - prevX);
+					}
+					prevX = tx;
+					prevY = ty;
+				}
+			} else {
+				a = [];
+				precision = ease.rawBezier.length;
+				for (i = 0; i < precision; i += 2) {
+					a.push((((x + ease.rawBezier[i] * width) * rnd) | 0) / rnd + "," + (((y + ease.rawBezier[i + 1] * -height) * rnd) | 0) / rnd);
+				}
+				a[0] = "M" + a[0];
+				a[1] = "C" + a[1];
+			}
+			if (e) {
+				(typeof(e) === "string" ? document.querySelector(e) : e).setAttribute("d", a.join(" "));
+			}
+			return a.join(" ");
+		};
+
+		return CustomEase;
+
+	}, true);
+
+}); if (_gsScope._gsDefine) { _gsScope._gsQueue.pop()(); }
+
+//export to AMD/RequireJS and CommonJS/Node (precursor to full modular build system coming at a later date)
+(function(name) {
+	"use strict";
+	var getGlobal = function() {
+		return (_gsScope.GreenSockGlobals || _gsScope)[name];
+	};
+	if (typeof(module) !== "undefined" && module.exports) { //node
+		__webpack_require__(1);
+		module.exports = getGlobal();
+	} else if (true) { //AMD
+		!(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(1)], __WEBPACK_AMD_DEFINE_FACTORY__ = (getGlobal),
+				__WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ?
+				(__WEBPACK_AMD_DEFINE_FACTORY__.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__)) : __WEBPACK_AMD_DEFINE_FACTORY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+	}
+}("CustomEase"));
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(2)))
+
+/***/ }),
+/* 26 */
+/***/ (function(module, exports, __webpack_require__) {
+
+/*** IMPORTS FROM imports-loader ***/
+var THREE = __webpack_require__(0);
+
+/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+THREE.ShaderPass = function ( shader, textureID ) {
+
+	THREE.Pass.call( this );
+
+	this.textureID = ( textureID !== undefined ) ? textureID : "tDiffuse";
+
+	if ( shader instanceof THREE.ShaderMaterial ) {
+
+		this.uniforms = shader.uniforms;
+
+		this.material = shader;
+
+	} else if ( shader ) {
+
+		this.uniforms = THREE.UniformsUtils.clone( shader.uniforms );
+
+		this.material = new THREE.ShaderMaterial( {
+
+			defines: shader.defines || {},
+			uniforms: this.uniforms,
+			vertexShader: shader.vertexShader,
+			fragmentShader: shader.fragmentShader
+
+		} );
+
+	}
+
+	this.camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+	this.scene = new THREE.Scene();
+
+	this.quad = new THREE.Mesh( new THREE.PlaneBufferGeometry( 2, 2 ), null );
+	this.quad.frustumCulled = false; // Avoid getting clipped
+	this.scene.add( this.quad );
+
+};
+
+THREE.ShaderPass.prototype = Object.assign( Object.create( THREE.Pass.prototype ), {
+
+	constructor: THREE.ShaderPass,
+
+	render: function( renderer, writeBuffer, readBuffer, delta, maskActive ) {
+
+		if ( this.uniforms[ this.textureID ] ) {
+
+			this.uniforms[ this.textureID ].value = readBuffer.texture;
+
+		}
+
+		this.quad.material = this.material;
+
+		if ( this.renderToScreen ) {
+
+			renderer.render( this.scene, this.camera );
+
+		} else {
+
+			renderer.render( this.scene, this.camera, writeBuffer, this.clear );
+
+		}
+
+	}
+
+} );
+
+
+
+/***/ }),
+/* 27 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_dat_gui__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__GPUComputationRenderer__ = __webpack_require__(28);
+
+
+var ComputePosition = __webpack_require__(29);
+var ComputeVelocity = __webpack_require__(30);
+var vert = __webpack_require__(31);
+var frag = __webpack_require__(32);
+// const pal_json = require('./models/pal/pal_decimated.json');
+// *********** ひとつめのシーン *********** //
+var Scene02 = /** @class */ (function () {
+    // ******************************************************
+    function Scene02(renderer, gui, vthree) {
+        var _this = this;
+        this.name = "scene2";
+        this.uniforms = [];
+        this.materials = [];
+        this.TEXTURE_WIDTH = 320;
+        this.TEXTURE_HEIGHT = 320;
+        this.scaleZ = 1.0;
+        this.isScaleZ = false;
+        this.speedScaleZ = 0.0001;
+        this.isMoveToFront_Pal = true;
+        this.translateZ_pal = 0;
+        this.glitchDist = 0.01;
+        this.time = 0;
+        this._threshold = -999.0;
+        this.animationNum = 0.0;
+        this.isShaderReplace = false;
+        this.moveFlontSpeed = 3.0;
+        this.initModelPosition = new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0, 0, 0);
+        this.isWireGlitch = false;
+        this.isEnd = false;
+        this.isUpdate = true;
+        this.isShaderReplased = false;
+        this.isPostProcessing = false;
+        this.replaceShader_WireWave = function (object, isTransparent, isWire, callback) {
+            if (!_this.isShaderReplace) {
+                console.log(object);
+                var materials = object.material.materials;
+                _this.materials = materials;
+                console.log(materials);
+                for (var i = 0; i < materials.length; i++) {
+                    //let img = materials[i].map.image.src;//.attributes.currentSrc;
+                    console.log(materials[i]);
+                    console.log(materials[i].map);
+                    console.log(materials[i].map.image);
+                    var img = materials[i].map.image.currentSrc;
+                    var _uniforms = {
+                        time: { value: 1.0 },
+                        texture: { value: new __WEBPACK_IMPORTED_MODULE_0_three__["TextureLoader"]().load(img) },
+                        transparent: { value: isTransparent },
+                        threshold: { value: 0 },
+                        texturePosition: { value: null },
+                        isDisplay: { value: true },
+                        glitchVec: { value: new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](1, 0, 0) },
+                        glitchDist: { value: 0.0 },
+                        animationNum: { value: 0 }
+                    };
+                    _this.uniforms.push(_uniforms);
+                    // materials[i].wireframe = true;
+                    materials[i] = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderMaterial"]({
+                        uniforms: _uniforms,
+                        vertexShader: vert,
+                        fragmentShader: frag,
+                        wireframe: isWire,
+                        transparent: true,
+                        side: __WEBPACK_IMPORTED_MODULE_0_three__["DoubleSide"]
+                        // drawBuffer:true
+                    });
+                }
+                return object;
+                callback();
+                _this.isShaderReplace = true;
+            }
+        };
+        this.reset = function () {
+            _this.isMoveToFront_Pal = false;
+            _this.isScaleZ = false;
+            _this.scaleZ = 1.0;
+            _this.speedScaleZ = 0.0001;
+            _this.isMoveToFront_Pal = false;
+            _this.translateZ_pal = 0;
+            _this.glitchDist = 0.01;
+            _this.time = 0;
+            _this._threshold = 999.0;
+            _this.animationNum = 0.0;
+            _this.moveFlontSpeed = 3.0;
+            _this.isWireGlitch = false;
+            _this.isEnd = false;
+            _this.scene.scale.set(1.3, 1, _this.scaleZ);
+            // this.scene.position.set(1.2,1,this.scaleZ);
+            for (var i = 0; i < _this.uniforms.length; i++) {
+                _this.uniforms[i].glitchDist.value = 0;
+                _this.materials[i].wireframe = false;
+                _this.uniforms[i].animationNum.value = 0;
+            }
+            // for(let i = 0; i < this.pal.length; i++)
+            // {
+            _this.pal.position.set(0, 0, 0);
+            // }
+            _this.pal.translateY(0);
+            _this.pal.translateZ(0);
+            _this.scene.rotation.setFromVector3(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0, 0, 0));
+        };
+        this.resetandgo = function () {
+            _this.reset();
+            _this.isMoveToFront_Pal = true;
+        };
+        this.renderer = renderer;
+        this.vthree = vthree;
+        this.createScene();
+        this.gui = gui;
+        console.log("scene created!");
+    }
+    // ******************************************************
+    Scene02.prototype.createScene = function () {
+        var _this = this;
+        // this.vthree.progress.push({"scene2":0});
+        this.scene = new __WEBPACK_IMPORTED_MODULE_0_three__["Scene"]();
+        var ambient = new __WEBPACK_IMPORTED_MODULE_0_three__["AmbientLight"](0xffffff);
+        this.scene.add(ambient);
+        var dLight = new __WEBPACK_IMPORTED_MODULE_0_three__["DirectionalLight"](0xffffff, 0.2);
+        dLight.position.set(0, 1, 0).normalize();
+        this.scene.add(dLight);
+        var directionalLight = new __WEBPACK_IMPORTED_MODULE_0_three__["DirectionalLight"](0xffeedd);
+        directionalLight.position.set(0, 0, 1).normalize();
+        this.scene.add(directionalLight);
+        var onProgress = function (xhr) {
+            if (xhr.lengthComputable) {
+                var percentComplete = xhr.loaded / xhr.total * 100;
+                _this.vthree.progress[_this.name] = Math.round(percentComplete) - 1;
+                if (Math.round(percentComplete) == 100) {
+                    _this.isUpdate = true;
+                    // this.replaceShader_WireWave(this.pal,0,false);
+                }
+                console.log(Math.round(percentComplete) + '% downloaded');
+            }
+        };
+        var onError = function (xhr) {
+        };
+        var loader = new __WEBPACK_IMPORTED_MODULE_0_three__["JSONLoader"]();
+        loader.load("models/pal/pal_decimated.json", function (geometry, materials) {
+            var faceMaterial = new __WEBPACK_IMPORTED_MODULE_0_three__["MultiMaterial"](materials);
+            var mesh = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](geometry, faceMaterial);
+            _this.pal = mesh;
+            // mesh.position.set(-1,0.5,0);
+            // mesh.scale.set(1.5,1,1);
+            console.log("pal");
+            console.log(mesh);
+            _this.scene.add(mesh);
+            _this.vthree.progress[_this.name] += 1;
+        }, onProgress, onError);
+        // カメラを作成
+        this.camera = new __WEBPACK_IMPORTED_MODULE_0_three__["PerspectiveCamera"](105, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // カメラ位置を設定
+        this.scene.scale.set(1.3, 1, 1);
+        this.camera.position.y = 3;
+        this.camera.position.z = 30;
+        this.initComputeRenderer();
+        this.initPostProcessing();
+    };
+    Scene02.prototype.Awake = function () {
+        if (this.vthree.progress[this.name] == 100) {
+            try {
+                this.update();
+                this.shaderReplace();
+            }
+            catch (e) {
+                console.log(e);
+                this.vthree.isFistUpdate[2] = false;
+                return true;
+            }
+            this.vthree.isFistUpdate[2] = true;
+        }
+    };
+    Scene02.prototype.shaderReplace = function () {
+        // if(this.isShaderReplased)
+        // {
+        this.replaceShader_WireWave(this.pal, 0, false, this.update);
+        //     this.isShaderReplased = true;
+        // }
+    };
+    Scene02.prototype.initComputeRenderer = function () {
+        this.gpuCompute = new __WEBPACK_IMPORTED_MODULE_1__GPUComputationRenderer__["a" /* default */](this.TEXTURE_WIDTH, this.TEXTURE_HEIGHT, this.renderer);
+        console.log(this.gpuCompute);
+        var dtPosition = this.gpuCompute.createTexture();
+        this.fillTexture(dtPosition);
+        this.positionVariable = this.gpuCompute.addVariable("texturePosition", ComputePosition, dtPosition);
+        this.gpuCompute.setVariableDependencies(this.positionVariable, [this.positionVariable]);
+        var error = this.gpuCompute.init();
+        if (error !== null) {
+            console.error(error);
+        }
+    };
+    Scene02.prototype.fillTexture = function (texturePosition) {
+        var posArray = texturePosition.image.data;
+        for (var k = 0, k1 = posArray.length; k < k1; k += 4) {
+            var x, y, z;
+            x = 0;
+            y = 0;
+            z = 0;
+            posArray[k + 0] = x;
+            posArray[k + 1] = y;
+            posArray[k + 2] = z;
+            posArray[k + 3] = 0;
+        }
+    };
+    Scene02.prototype.initPostProcessing = function () {
+        var shaderVignette = __WEBPACK_IMPORTED_MODULE_0_three__["VignetteShader"];
+        var shaderBleach = __WEBPACK_IMPORTED_MODULE_0_three__["BleachBypassShader"];
+        var film = __WEBPACK_IMPORTED_MODULE_0_three__["FilmShader"];
+        var tiltshift = __WEBPACK_IMPORTED_MODULE_0_three__["VerticalTiltShiftShader"];
+        tiltshift.uniforms = {
+            "tDiffuse": { value: null },
+            "v": { value: 1.0 / 512.0 },
+            "r": { value: 0.45 }
+        },
+            film.uniforms = {
+                "tDiffuse": { value: null },
+                "time": { value: 0.0 },
+                "nIntensity": { value: 0.1 },
+                "sIntensity": { value: 0.01 },
+                "sCount": { value: 4096 / 2 },
+                "grayscale": { value: 0 }
+            };
+        var ConvolutionShader = __WEBPACK_IMPORTED_MODULE_0_three__["ConvolutionShader"];
+        var shaderCopy = __WEBPACK_IMPORTED_MODULE_0_three__["CopyShader"];
+        var effectVignette = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](shaderVignette);
+        var effectCopy = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](shaderCopy);
+        effectVignette.uniforms["offset"].value = 0.75;
+        effectVignette.uniforms["darkness"].value = 1.2;
+        // var effectBloom = new THREE.ShaderPass( ConvolutionShader );
+        this.effectFilm = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](film);
+        var effectTiltshift = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](tiltshift);
+        var effectBleach = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderPass"](shaderBleach);
+        effectVignette.renderToScreen = true;
+        this.composer = new __WEBPACK_IMPORTED_MODULE_0_three__["EffectComposer"](this.renderer);
+        this.composer.addPass(new __WEBPACK_IMPORTED_MODULE_0_three__["RenderPass"](this.scene, this.camera));
+        // this.composer.addPass( effectBloom );
+        this.composer.addPass(this.effectFilm);
+        this.composer.addPass(effectBleach);
+        this.composer.addPass(effectTiltshift);
+        this.composer.addPass(effectVignette);
+        this.isPostProcessing = true;
+    };
+    // ******************************************************
+    Scene02.prototype.keyUp = function (e) {
+    };
+    Scene02.prototype.click = function () {
+        // this.replaceShader_WireWave(this.pal,0,false);
+        this.Awake();
+    };
+    // ******************************************************
+    Scene02.prototype.keyDown = function (e) {
+        if (e.key == "Space") {
+            // this.replaceShader_WireWave(this.pal,0,false);
+            // this.isShaderReplace = true;
+        }
+        if (e.key == "p") {
+            this.image_uniform.display.value = !this.image_uniform.display.value;
+        }
+        if (e.key == "m") {
+            this.isMoveToFront_Pal = !this.isMoveToFront_Pal;
+        }
+        if (e.key == "d") {
+            for (var i = 0; i < this.uniforms.length; i++) {
+                this.uniforms[i].isDisplay.value = !this.uniforms[i].isDisplay.value;
+            }
+        }
+        if (e.key == "t") {
+            this._threshold = -40.0;
+        }
+        if (e.key == "w") {
+            this.isWireGlitch = !this.isWireGlitch;
+        }
+        if (e.key == "z") {
+            this.isScaleZ = !this.isScaleZ;
+        }
+        if (e.key == "a") {
+            for (var i = 0; i < this.uniforms.length; i++) {
+                this.uniforms[i].animationNum.value = 1;
+            }
+        }
+        if (e.key == "e") {
+            this.isEnd = !this.isEnd;
+            // console.log(this.isEnd);
+        }
+        if (e.key == "r") {
+            this.resetandgo();
+        }
+    };
+    // ******************************************************
+    Scene02.prototype.mouseMove = function (e) {
+    };
+    // ******************************************************
+    Scene02.prototype.onMouseDown = function (e) {
+    };
+    // ******************************************************
+    Scene02.prototype.update = function (time) {
+        if (this.isUpdate) {
+            this.effectFilm.uniforms.time.value += 0.1;
+            if (this.vthree.oscValue[1] == 0) {
+                this.reset();
+            }
+            if (this.vthree.oscValue[1] == 1) {
+                this.reset();
+                // this.replaceShader_WireWave(this.pal[0],0,false);
+            }
+            if (this.vthree.oscValue[1] == 65) {
+                this.isMoveToFront_Pal = true;
+            }
+            if (this.vthree.oscValue[1] == 66) {
+                // this.isMoveToFront_Pal = true;
+                this.isScaleZ = true;
+            }
+            if (this.vthree.oscValue[1] == 74) {
+                this.scaleZ = 0;
+                this.isScaleZ = false;
+                this.scene.scale.set(1.3, 1, 1);
+                // this.isMoveToFront_Pal = false;
+                // this.translateZ_pal = 0;
+                // this.pal[0
+                // this.isWireGlitch = true;
+            }
+            if (this.vthree.oscValue[1] == 75) {
+                this.isWireGlitch = true;
+                // this.glitchDist = 0.01;
+            }
+            if (this.isWireGlitch) {
+                this.isMoveToFront_Pal = false;
+                for (var i = 0; i < this.materials.length; i++) {
+                    this.materials[i].wireframe = !this.materials[i].wireframe;
+                }
+                if (Math.random() < 0.9) {
+                    // this
+                    this.glitchDist *= 1.1;
+                    for (var i = 0; i < this.uniforms.length; i++) {
+                        // if(this.glitchDist >= Math.PI/2)
+                        // {
+                        //     this.glitchDist = 0.0;
+                        // }
+                        this.uniforms[i].glitchDist.value = this.glitchDist * 20.0;
+                    }
+                }
+            }
+            if (this.vthree.oscValue[1] == 76) {
+                this.isEnd = true;
+                this.isMoveToFront_Pal = true;
+            }
+            if (this.isEnd) {
+                this.scene.rotation.setFromVector3(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](4.75, 0, 0));
+                this.glitchDist = 0.0;
+                for (var i = 0; i < this.uniforms.length; i++) {
+                    this.uniforms[i].animationNum.value = 1;
+                    this.uniforms[i].glitchDist.value = Math.abs(Math.sin(this.glitchDist)) * 20.0;
+                    this.materials[i].wireframe = false;
+                }
+                this.isWireGlitch = false;
+                // this.isEnd = true;
+                this.isMoveToFront_Pal = true;
+            }
+            if (this.isScaleZ) {
+                this.speedScaleZ *= 1.1;
+                this.scaleZ += this.speedScaleZ;
+                if (this.scaleZ <= 25.0) {
+                    this.scene.scale.set(1.3, 1, this.scaleZ);
+                }
+            }
+            this.renderer.setClearColor(0x000000);
+            this.time++;
+            this.gpuCompute.compute();
+            var timerStep = 0.004;
+            for (var i = 0; i < this.uniforms.length; i++) {
+                //console.log(this.uniforms[i]);
+                this.uniforms[i].texturePosition.value = this.gpuCompute.getCurrentRenderTarget(this.positionVariable).texture;
+                this.uniforms[i].time.value += timerStep;
+            }
+            if (this.isMoveToFront_Pal) {
+                console.log(this.translateZ_pal);
+                if (this.translateZ_pal < -12.5) {
+                    // this.reset();
+                    // this.isMoveToFront_Pal= true;
+                    this.resetandgo();
+                }
+                if (this.translateZ_pal < -9.7 && this.translateZ_pal > -9.8) {
+                    var p = Math.random();
+                    if (p < 0.02) {
+                        if (Math.random() < 0.4) {
+                            this.isScaleZ = true;
+                            setTimeout(this.resetandgo, 2500);
+                        }
+                        else {
+                            this.isWireGlitch = true;
+                            setTimeout(this.resetandgo, 5000);
+                        }
+                        this.isMoveToFront_Pal = false;
+                    }
+                }
+                this.moveFlontSpeed += (0.0001 - this.moveFlontSpeed) * 0.3;
+                this.translateZ_pal -= this.moveFlontSpeed;
+                if (this.isEnd) {
+                    this.pal.translateZ(0);
+                    this.pal.translateY(this.translateZ_pal * 0.0005);
+                }
+                else {
+                    this.pal.translateY(0);
+                    this.pal.translateZ(-this.translateZ_pal * 0.0005);
+                }
+            }
+            this.scene.rotation.setFromVector3(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0, this.gui.parameters.scene_rotation_y, 0));
+        }
+        this.composer.render();
+    };
+    return Scene02;
+}());
+/* harmony default export */ __webpack_exports__["a"] = (Scene02);
+
+
+/***/ }),
+/* 28 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
+
+var GPUComputationRenderer = /** @class */ (function () {
+    function GPUComputationRenderer(sizeX, sizeY, renderer) {
+        this.variables = [];
+        this.currentTextureIndex = 0;
+        this.scene = new __WEBPACK_IMPORTED_MODULE_0_three__["Scene"]();
+        this.camera = new __WEBPACK_IMPORTED_MODULE_0_three__["Camera"]();
+        this.passThruUniforms = {
+            texture: { value: null }
+        };
+        this.sizeX = sizeX;
+        this.sizeY = sizeY;
+        this.renderer = renderer;
+        this.camera.position.z = 1;
+        this.passThruShader = this.createShaderMaterial(this.getPassThroughFragmentShader(), this.passThruUniforms);
+        this.mesh = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](new __WEBPACK_IMPORTED_MODULE_0_three__["PlaneBufferGeometry"](2, 2), this.passThruShader);
+        this.scene.add(this.mesh);
+    }
+    GPUComputationRenderer.prototype.addVariable = function (variableName, computeFragmentShader, initialValueTexture) {
+        var material = this.createShaderMaterial(computeFragmentShader);
+        var variable = {
+            name: variableName,
+            initialValueTexture: initialValueTexture,
+            material: material,
+            dependencies: null,
+            renderTargets: [],
+            wrapS: null,
+            wrapT: null,
+            minFilter: __WEBPACK_IMPORTED_MODULE_0_three__["NearestFilter"],
+            magFilter: __WEBPACK_IMPORTED_MODULE_0_three__["NearestFilter"]
+        };
+        this.variables.push(variable);
+        return variable;
+    };
+    ;
+    GPUComputationRenderer.prototype.setVariableDependencies = function (variable, dependencies) {
+        variable.dependencies = dependencies;
+    };
+    ;
+    GPUComputationRenderer.prototype.init = function () {
+        if (!this.renderer.extensions.get("OES_texture_float")) {
+            return "No OES_texture_float support for float textures.";
+        }
+        if (this.renderer.capabilities.maxVertexTextures === 0) {
+            return "No support for vertex shader textures.";
+        }
+        for (var i = 0; i < this.variables.length; i++) {
+            var variable = this.variables[i];
+            // Creates rendertargets and initialize them with input texture
+            variable.renderTargets[0] = this.createRenderTarget(this.sizeX, this.sizeY, variable.wrapS, variable.wrapT, variable.minFilter, variable.magFilter);
+            variable.renderTargets[1] = this.createRenderTarget(this.sizeX, this.sizeY, variable.wrapS, variable.wrapT, variable.minFilter, variable.magFilter);
+            this.renderTexture(variable.initialValueTexture, variable.renderTargets[0]);
+            this.renderTexture(variable.initialValueTexture, variable.renderTargets[1]);
+            // Adds dependencies uniforms to the ShaderMaterial
+            var material = variable.material;
+            var uniforms = material.uniforms;
+            if (variable.dependencies !== null) {
+                for (var d = 0; d < variable.dependencies.length; d++) {
+                    var depVar = variable.dependencies[d];
+                    if (depVar.name !== variable.name) {
+                        // Checks if variable exists
+                        var found = false;
+                        for (var j = 0; j < this.variables.length; j++) {
+                            if (depVar.name === this.variables[j].name) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            return "Variable dependency not found. Variable=" + variable.name + ", dependency=" + depVar.name;
+                        }
+                    }
+                    uniforms[depVar.name] = { value: null };
+                    material.fragmentShader = "\nuniform sampler2D " + depVar.name + ";\n" + material.fragmentShader;
+                }
+            }
+        }
+        this.currentTextureIndex = 0;
+        return null;
+    };
+    ;
+    GPUComputationRenderer.prototype.compute = function () {
+        var currentTextureIndex = this.currentTextureIndex;
+        var nextTextureIndex = this.currentTextureIndex === 0 ? 1 : 0;
+        for (var i = 0, il = this.variables.length; i < il; i++) {
+            var variable = this.variables[i];
+            // Sets texture dependencies uniforms
+            if (variable.dependencies !== null) {
+                var uniforms = variable.material.uniforms;
+                for (var d = 0, dl = variable.dependencies.length; d < dl; d++) {
+                    var depVar = variable.dependencies[d];
+                    uniforms[depVar.name].value = depVar.renderTargets[currentTextureIndex].texture;
+                }
+            }
+            // Performs the computation for this variable
+            this.doRenderTarget(variable.material, variable.renderTargets[nextTextureIndex]);
+        }
+        this.currentTextureIndex = nextTextureIndex;
+    };
+    ;
+    GPUComputationRenderer.prototype.getCurrentRenderTarget = function (variable) {
+        return variable.renderTargets[this.currentTextureIndex];
+    };
+    ;
+    GPUComputationRenderer.prototype.getAlternateRenderTarget = function (variable) {
+        return variable.renderTargets[this.currentTextureIndex === 0 ? 1 : 0];
+    };
+    ;
+    GPUComputationRenderer.prototype.addResolutionDefine = function (materialShader) {
+        materialShader.defines.resolution = 'vec2( ' + this.sizeX.toFixed(1) + ', ' + this.sizeY.toFixed(1) + " )";
+    };
+    // The following functions can be used to compute things manually
+    GPUComputationRenderer.prototype.createShaderMaterial = function (computeFragmentShader, uniforms) {
+        uniforms = uniforms || {};
+        var material = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderMaterial"]({
+            uniforms: uniforms,
+            vertexShader: this.getPassThroughVertexShader(),
+            fragmentShader: computeFragmentShader
+        });
+        this.addResolutionDefine(material);
+        return material;
+    };
+    GPUComputationRenderer.prototype.createRenderTarget = function (sizeXTexture, sizeYTexture, wrapS, wrapT, minFilter, magFilter) {
+        sizeXTexture = sizeXTexture || this.sizeX;
+        sizeYTexture = sizeYTexture || this.sizeY;
+        wrapS = wrapS || __WEBPACK_IMPORTED_MODULE_0_three__["ClampToEdgeWrapping"];
+        wrapT = wrapT || __WEBPACK_IMPORTED_MODULE_0_three__["ClampToEdgeWrapping"];
+        minFilter = minFilter || __WEBPACK_IMPORTED_MODULE_0_three__["NearestFilter"];
+        magFilter = magFilter || __WEBPACK_IMPORTED_MODULE_0_three__["NearestFilter"];
+        var renderTarget = new __WEBPACK_IMPORTED_MODULE_0_three__["WebGLRenderTarget"](sizeXTexture, sizeYTexture, {
+            wrapS: wrapS,
+            wrapT: wrapT,
+            minFilter: minFilter,
+            magFilter: magFilter,
+            format: __WEBPACK_IMPORTED_MODULE_0_three__["RGBAFormat"],
+            type: (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) ? __WEBPACK_IMPORTED_MODULE_0_three__["HalfFloatType"] : __WEBPACK_IMPORTED_MODULE_0_three__["FloatType"],
+            stencilBuffer: false
+        });
+        return renderTarget;
+    };
+    ;
+    GPUComputationRenderer.prototype.createTexture = function (sizeXTexture, sizeYTexture) {
+        sizeXTexture = sizeXTexture || this.sizeX;
+        sizeYTexture = sizeYTexture || this.sizeY;
+        var a = new Float32Array(sizeXTexture * sizeYTexture * 4);
+        var texture = new __WEBPACK_IMPORTED_MODULE_0_three__["DataTexture"](a, this.sizeX, this.sizeY, __WEBPACK_IMPORTED_MODULE_0_three__["RGBAFormat"], __WEBPACK_IMPORTED_MODULE_0_three__["FloatType"]);
+        texture.needsUpdate = true;
+        return texture;
+    };
+    ;
+    GPUComputationRenderer.prototype.renderTexture = function (input, output) {
+        // Takes a texture, and render out in rendertarget
+        // input = Texture
+        // output = RenderTarget
+        this.passThruUniforms.texture.value = input;
+        this.doRenderTarget(this.passThruShader, output);
+        this.passThruUniforms.texture.value = null;
+    };
+    ;
+    GPUComputationRenderer.prototype.doRenderTarget = function (material, output) {
+        this.mesh.material = material;
+        this.renderer.render(this.scene, this.camera, output);
+        this.mesh.material = this.passThruShader;
+    };
+    ;
+    // Shaders
+    GPUComputationRenderer.prototype.getPassThroughVertexShader = function () {
+        return "void main()	{\n" +
+            "\n" +
+            "	gl_Position = vec4( position, 1.0 );\n" +
+            "\n" +
+            "}\n";
+    };
+    GPUComputationRenderer.prototype.getPassThroughFragmentShader = function () {
+        return "uniform sampler2D texture;\n" +
+            "\n" +
+            "void main() {\n" +
+            "\n" +
+            "	vec2 uv = gl_FragCoord.xy / resolution.xy;\n" +
+            "\n" +
+            "	gl_FragColor = texture2D( texture, uv );\n" +
+            "\n" +
+            "}\n";
+    };
+    return GPUComputationRenderer;
+}());
+/* harmony default export */ __webpack_exports__["a"] = (GPUComputationRenderer);
+
+
+/***/ }),
+/* 29 */
+/***/ (function(module, exports) {
+
+module.exports = "void main() {\n    vec2 uv = gl_FragCoord.xy / resolution.xy;\n    vec4 tmpPos = texture2D( texturePosition, uv );\n    //tmpPos.x += 0.5;\n    vec3 pos = tmpPos.xyz;\n    gl_FragColor = vec4( pos, 1.0 );\n}"
+
+/***/ }),
+/* 30 */
+/***/ (function(module, exports) {
+
+module.exports = "void main() {\n        vec2 uv = gl_FragCoord.xy / resolution.xy;\n        float idParticle = uv.y * resolution.x + uv.x;\n       // vec4 tmpVel = texture2D( textureVelocity, uv );\n        vec3 vel = tmpVel.xyz;\n\n        gl_FragColor = vec4( vel.xyz, 1.0 );\n    }"
+
+/***/ }),
+/* 31 */
+/***/ (function(module, exports) {
+
+module.exports = "varying vec2 vUv;\n    varying vec3 vPos;\n    uniform float time;\n    vec3 mod289(vec3 x) {\n      return x - floor(x * (1.0 / 289.0)) * 289.0;\n    }\n\n    vec4 mod289(vec4 x) {\n      return x - floor(x * (1.0 / 289.0)) * 289.0;\n    }\n\n    vec4 permute(vec4 x) {\n         return mod289(((x*34.0)+1.0)*x);\n    }\n\n    vec4 taylorInvSqrt(vec4 r)\n    {\n      return 1.79284291400159 - 0.85373472095314 * r;\n    }\n\n    float snoise(vec3 v)\n      {\n      const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;\n      const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);\n\n    // First corner\n      vec3 i  = floor(v + dot(v, C.yyy) );\n      vec3 x0 =   v - i + dot(i, C.xxx) ;\n\n    // Other corners\n      vec3 g = step(x0.yzx, x0.xyz);\n      vec3 l = 1.0 - g;\n      vec3 i1 = min( g.xyz, l.zxy );\n      vec3 i2 = max( g.xyz, l.zxy );\n\n      //   x0 = x0 - 0.0 + 0.0 * C.xxx;\n      //   x1 = x0 - i1  + 1.0 * C.xxx;\n      //   x2 = x0 - i2  + 2.0 * C.xxx;\n      //   x3 = x0 - 1.0 + 3.0 * C.xxx;\n      vec3 x1 = x0 - i1 + C.xxx;\n      vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y\n      vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y\n\n    // Permutations\n      i = mod289(i);\n      vec4 p = permute( permute( permute(\n                 i.z + vec4(0.0, i1.z, i2.z, 1.0 ))\n               + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))\n               + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));\n\n    // Gradients: 7x7 points over a square, mapped onto an octahedron.\n    // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)\n      float n_ = 0.142857142857; // 1.0/7.0\n      vec3  ns = n_ * D.wyz - D.xzx;\n\n      vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)\n\n      vec4 x_ = floor(j * ns.z);\n      vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)\n\n      vec4 x = x_ *ns.x + ns.yyyy;\n      vec4 y = y_ *ns.x + ns.yyyy;\n      vec4 h = 1.0 - abs(x) - abs(y);\n\n      vec4 b0 = vec4( x.xy, y.xy );\n      vec4 b1 = vec4( x.zw, y.zw );\n\n      //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;\n      //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;\n      vec4 s0 = floor(b0)*2.0 + 1.0;\n      vec4 s1 = floor(b1)*2.0 + 1.0;\n      vec4 sh = -step(h, vec4(0.0));\n\n      vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;\n      vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;\n\n      vec3 p0 = vec3(a0.xy,h.x);\n      vec3 p1 = vec3(a0.zw,h.y);\n      vec3 p2 = vec3(a1.xy,h.z);\n      vec3 p3 = vec3(a1.zw,h.w);\n\n    //Normalise gradients\n      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));\n      p0 *= norm.x;\n      p1 *= norm.y;\n      p2 *= norm.z;\n      p3 *= norm.w;\n\n    // Mix final noise value\n      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);\n      m = m * m;\n      return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),\n                                    dot(p2,x2), dot(p3,x3) ) );\n      }\n\n    vec3 snoiseVec3( vec3 x ){\n\n      float s  = snoise(vec3( x ));\n      float s1 = snoise(vec3( x.y - 19.1 , x.z + 33.4 , x.x + 47.2 ));\n      float s2 = snoise(vec3( x.z + 74.2 , x.x - 124.5 , x.y + 99.4 ));\n      vec3 c = vec3( s , s1 , s2 );\n      return c;\n\n    }\n\n\n    vec3 curlNoise( vec3 p ){\n\n      const float e = .1;\n      vec3 dx = vec3( e   , 0.0 , 0.0 );\n      vec3 dy = vec3( 0.0 , e   , 0.0 );\n      vec3 dz = vec3( 0.0 , 0.0 , e   );\n\n      vec3 p_x0 = snoiseVec3( p - dx );\n      vec3 p_x1 = snoiseVec3( p + dx );\n      vec3 p_y0 = snoiseVec3( p - dy );\n      vec3 p_y1 = snoiseVec3( p + dy );\n      vec3 p_z0 = snoiseVec3( p - dz );\n      vec3 p_z1 = snoiseVec3( p + dz );\n\n      float x = p_y1.z - p_y0.z - p_z1.y + p_z0.y;\n      float y = p_z1.x - p_z0.x - p_x1.z + p_x0.z;\n      float z = p_x1.y - p_x0.y - p_y1.x + p_y0.x;\n\n      const float divisor = 1.0 / ( 2.0 * e );\n      return normalize( vec3( x , y , z ) * divisor );\n\n    }\n    uniform int transparent;\n    uniform float threshold;\n    //varying float alpha;\n    uniform sampler2D texturePosition;\n    uniform vec3 glitchVec;\n    uniform float glitchDist;\n    uniform int animationNum;\n    void main()\n    {\n        vUv = uv;\n        vec3 p = position.xyz;\n        float d = distance(vec3(p.x,p.y,p.z), vec3(0,0,threshold));\n        float height = 0.0;\n        if(d < 10.0)\n        {\n            height =sin((d/10.0)*3.14)*15.0;\n\n        }\n\n        vec4 tmpPos = texture2D( texturePosition, uv );\n        //position.y += sin(time)*0.03;\n\n        float noisey = snoise(p*0.5)*0.4;\n        float noisex = snoise(p.xzy*0.5)*0.4;\n        float noisez = snoise(p.zyx*0.4)*0.4;\n        p.y += sin(p.z+time)*0.3;\n        p.x += sin(p.z*0.5+time)*noisex;\n\n        vec3 v = p;\n        v.z = 0.0;\n        v = normalize(v);\n        v.x *= 0.1;\n\n        p.y += height/14.0;\n\n        p+= tmpPos.xyz + glitchVec * abs(noisez)*glitchDist;\n       // p += v*height*noisey;\n\n\n        float theta = sin( time + p.z ) / 2.0;\n        float _s = sin(time);\n\n        float c = cos( theta );\n        float s = sin( theta )*_s * 1.5;\n\n\n        mat3 m = mat3( c, s, 0, 0, 0, 1.0, -s, c, 0.0 );\n        if(animationNum == 1)\n        {\n\n           p *= m;\n\n        }\n\n\n        vPos = p;\n\n\n\n\n        vec4 mvPosition = modelViewMatrix * vec4( p, 1.0 );\n\n        //vec3 n = curlNoise(vec3(mvPosition.x,mvPosition.y+time,mvPosition.z));\n        gl_Position = projectionMatrix * (mvPosition);\n\n\n    }\n"
+
+/***/ }),
+/* 32 */
+/***/ (function(module, exports) {
+
+module.exports = " uniform sampler2D texture;\nvarying vec2 vUv;\nvarying vec3 vPos;\nuniform int transparent;\nuniform float threshold;\nfloat alpha;\nuniform bool isDisplay;\nvoid main( void ) {\n\n        if(transparent == 1)\n        {\n            float d = distance(vec3(vPos.x,vPos.y,vPos.z), vec3(0,0,threshold));\n\n            if(d < 10.0)\n            {\n                alpha =( 1.0-(d/10.0))+0.2;\n                if(alpha > 1.0)\n                {\n                    alpha = 1.0;\n                }\n\n            } else\n            {\n                alpha = 0.0;\n            }\n        } else\n        {\n            alpha = 1.0;\n        }\n      gl_FragColor = vec4(texture2D( texture, vUv ).rgb,alpha);\n      if(!isDisplay)\n      {\n        discard;\n      }\n\n}"
+
+/***/ }),
+/* 33 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
+
+var vert = __webpack_require__(34);
+var frag = __webpack_require__(35);
+// *********** ひとつめのシーン *********** //
+var WireBox = /** @class */ (function () {
+    function WireBox() {
+        var material = new __WEBPACK_IMPORTED_MODULE_0_three__["LineBasicMaterial"]({ vertexColors: __WEBPACK_IMPORTED_MODULE_0_three__["VertexColors"] });
+        var geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, 0.5));
+        geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, -0.5, 0.5));
+        geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, -0.5));
+        geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, -0.5, -0.5));
+        var line = new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](geometery);
+    }
+    return WireBox;
+}());
+var Scene03 = /** @class */ (function () {
+    // ******************************************************
+    function Scene03(renderer, gui, vthree) {
+        this.name = "scene3";
+        this.clickCount = 0;
+        this.vglitchValue = 0.6;
+        this.sceneZ = 0.0;
+        this.isGlitch01 = false;
+        this.isGlitch02 = false;
+        this.isAnimationStart = false;
+        this.isDebug68 = false;
+        this.isDebug69 = false;
+        this.isDebug70 = false;
+        this.isDebug71 = false;
+        this.isShaderReplace = false;
+        this.renderer = renderer;
+        this.gui = gui;
+        this.vthree = vthree;
+        this.createScene();
+        console.log("scene created!");
+    }
+    // ******************************************************
+    Scene03.prototype.createScene = function () {
+        var _this = this;
+        // this.vthree.progress.push({"scene3":0});
+        var x, y, z;
+        var _r = Math.random();
+        if (_r < 1.0) {
+            x = 1.0;
+            y = 0;
+            z = 0;
+            if (_r < 0.5) {
+                x = -1.0;
+                y = 0.0;
+                z = 0;
+            }
+        }
+        // for(let i = 0; i < 2; i++)
+        // {
+        this.uniform = {
+            time: { value: 1.0 },
+            texture: { value: null },
+            isDisplay: { value: true },
+            glitchVec: { value: new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](x, y, z).normalize() },
+            glitchDist: { value: 0.0 },
+            vGlitchArea: { value: 0.0 },
+            animationNum: { value: 1 }
+        };
+        // }
+        // console.log(this.uniforms);
+        this.scene = new __WEBPACK_IMPORTED_MODULE_0_three__["Scene"]();
+        // 立方体のジオメトリーを作成
+        this.geometry = new __WEBPACK_IMPORTED_MODULE_0_three__["BoxGeometry"](1, 1, 1);
+        // 緑のマテリアルを作成
+        this.material = new __WEBPACK_IMPORTED_MODULE_0_three__["MeshBasicMaterial"]({ color: 0x00ff00 });
+        // 上記作成のジオメトリーとマテリアルを合わせてメッシュを生成
+        this.cube = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](this.geometry, this.material);
+        // メッシュをシーンに追加
+        // this.scene.add( this.cube );
+        this.scene.add(new __WEBPACK_IMPORTED_MODULE_0_three__["AmbientLight"](0xffffff, 0.5));
+        // カメラを作成
+        this.camera = new __WEBPACK_IMPORTED_MODULE_0_three__["PerspectiveCamera"](75, this.vthree.getScreenWH().w / this.vthree.getScreenWH().h, 0.1, 1000);
+        // カメラ位置を設定
+        this.camera.position.z = 5;
+        this.onProgress = function (xhr) {
+            if (xhr.lengthComputable) {
+                var percentComplete = xhr.loaded / xhr.total * 100;
+                _this.vthree.progress[_this.name] = Math.round(percentComplete) - 1;
+                if (Math.round(percentComplete) == 100) {
+                    // this.isUpdate = true;
+                    // this.replaceShader_WireWave(this.pal,0,false);
+                }
+                console.log(Math.round(percentComplete) + '% downloaded');
+            }
+        };
+        this.onError = function (xhr) {
+        };
+        this.loader = new __WEBPACK_IMPORTED_MODULE_0_three__["JSONLoader"]();
+        this.loader.load('./models/parking/parking.json', function (geometry, materials) {
+            var faceMaterial = new __WEBPACK_IMPORTED_MODULE_0_three__["MultiMaterial"](materials);
+            _this.parking = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](geometry, faceMaterial);
+            // this.parking = parking.parkingMesh;
+            // mesh.position.set(-1,0.5,0);
+            // mesh.scale.set(1.5,1,1);
+            console.log("parking");
+            console.log(_this.parking);
+            _this.scene.add(_this.parking);
+            _this.vthree.progress[_this.name] += 1;
+        }, this.onProgress, this.onError);
+        this.createWireBox();
+    };
+    Scene03.prototype.Awake = function () {
+        var _this = this;
+        this.update();
+        try {
+            this.replaceShader();
+        }
+        catch (e) {
+            console.log(e);
+            this.vthree.isFistUpdate[3] = false;
+            this.loader.load('./models/parking/parking.json', function (geometry, materials) {
+                var faceMaterial = new __WEBPACK_IMPORTED_MODULE_0_three__["MultiMaterial"](materials);
+                _this.parking.material = faceMaterial;
+                // this.parking.material
+                // this.parking = this.parkingMesh;
+            }, this.onProgress, this.onError);
+            return true;
+        }
+        this.vthree.isFistUpdate[3] = true;
+    };
+    Scene03.prototype.createWireBox = function () {
+        var object = new __WEBPACK_IMPORTED_MODULE_0_three__["Object3D"]();
+        var line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        var line_material = new __WEBPACK_IMPORTED_MODULE_0_three__["LineBasicMaterial"]({ color: 0xffffff });
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, -0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, -0.5, -0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, -0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, 0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, 0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, 0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, 0.5, -0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, 0.5, -0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, 0.5, 0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, 0.5, 0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, -0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, 0.5, 0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, -0.5, -0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0.5, 0.5, -0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, -0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, 0.5, -0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        line_geometery = new __WEBPACK_IMPORTED_MODULE_0_three__["Geometry"]();
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, -0.5, 0.5));
+        line_geometery.vertices.push(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](-0.5, 0.5, 0.5));
+        object.add(new __WEBPACK_IMPORTED_MODULE_0_three__["Line"](line_geometery, line_material));
+        var scale = 8;
+        object.scale.set(scale * 1.1, scale, scale * 1.1);
+        object.position.y = 2.6;
+        object.position.z = 0.7;
+        this.scene.add(object);
+    };
+    Scene03.prototype.replaceShader = function () {
+        // console.log(this.parking.children[0].children[0].material);
+        this.pariking_materials = this.parking.material[0];
+        console.log(this.pariking_materials);
+        var img = this.pariking_materials.map.image.currentSrc;
+        this.uniform.texture.value = new __WEBPACK_IMPORTED_MODULE_0_three__["TextureLoader"]().load(img);
+        this.parking.material[0] = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderMaterial"]({
+            uniforms: this.uniform,
+            vertexShader: vert,
+            fragmentShader: frag,
+            wireframe: false,
+            transparent: false,
+            // side: THREE.DoubleSide,
+            linewidth: 1
+        });
+        // }
+        this.pariking_materials = this.parking.material[0];
+        this.isShaderReplace = true;
+        this.update();
+    };
+    // ******************************************************
+    Scene03.prototype.click = function () {
+        // console.log(this.pariking_materials);
+        // if(this.clickCount == 0)
+        // {
+        //
+        //     let img = this.pariking_materials.map.image.currentSrc;
+        //
+        //     this.uniforms.texture.value = new THREE.TextureLoader().load(img);
+        //
+        //     this.pariking_materials = new THREE.ShaderMaterial({
+        //         uniforms: this.uniforms,
+        //         vertexShader: document.getElementById("vertex_pal").textContent,
+        //         fragmentShader: document.getElementById("fragment_pal").textContent,
+        //         wireframe: true,
+        //         transparent:true,
+        //         side:THREE.DoubleSide
+        //         // drawBuffer:true
+        //     });
+        //     this.clickCount++;
+        // }
+        // this.parking.children[0].children[0].material.wireframe = true;
+        // this.parking.children[0].children[0].material = new THREE.MeshBasicMaterial({color:0xffffff});
+        //     this.pariking_materials.wireframe = !this.pariking_materials.wireframe;
+    };
+    // ******************************************************
+    Scene03.prototype.keyUp = function (e) {
+        // if(e.key == "w")
+        // {
+        //     this.parking.children[0].children[0].material.wireframe = !this.parking.children[0].children[0].material.wireframe;
+        // }
+        // if(e.key == "d")
+        // {
+        //     for(let i = 0; i < this.uniforms.length; i++)
+        //     {
+        //
+        //         let num = this.uniforms[i].animationNum.value;
+        //         console.log(num);
+        //         this.uniforms[i].animationNum.value = (num+1)%4;
+        //     }
+        // }
+    };
+    // ******************************************************
+    Scene03.prototype.mouseMove = function (e) {
+    };
+    // ******************************************************
+    Scene03.prototype.keyDown = function (e) {
+        if (e.key == "R") {
+            this.Awake();
+        }
+        if (e.key == "s") {
+            this.isAnimationStart = true;
+        }
+        if (e.key == "r") {
+            this.reset();
+        }
+        if (e.key == "z") {
+            this.isDebug68 = true;
+            this.isDebug69 = false;
+            this.isDebug70 = false;
+            this.isDebug71 = false;
+        }
+        if (e.key == "x") {
+            this.isDebug68 = false;
+            this.isDebug69 = true;
+            this.isDebug70 = false;
+            this.isDebug71 = false;
+        }
+        if (e.key == "c") {
+            this.isDebug68 = false;
+            this.isDebug69 = false;
+            this.isDebug70 = true;
+            this.isDebug71 = false;
+        }
+        if (e.key == "v") {
+            this.isDebug68 = false;
+            this.isDebug69 = false;
+            this.isDebug70 = false;
+            this.isDebug71 = true;
+        }
+    };
+    // ******************************************************
+    Scene03.prototype.onMouseDown = function (e) {
+    };
+    Scene03.prototype.reset = function () {
+        this.sceneZ = 0.0;
+        this.scene.position.set(0, -2, this.sceneZ);
+        this.uniform.time.value = 0;
+        this.uniform.vGlitchArea.value = 0;
+        this.pariking_materials.wireframe = false;
+        this.vglitchValue = 0.6;
+        this.isGlitch01 = false;
+        this.isGlitch02 = false;
+        this.isAnimationStart = false;
+        this.scene.rotation.setFromVector3(new __WEBPACK_IMPORTED_MODULE_0_three__["Vector3"](0, 0, 0));
+        this.isDebug68 = false;
+        this.isDebug69 = false;
+        this.isDebug70 = false;
+        this.isDebug71 = false;
+    };
+    // ******************************************************
+    Scene03.prototype.update = function (time) {
+        this.uniform.time.value += 0.01;
+        if (this.isAnimationStart && !this.isGlitch02) {
+            this.sceneZ += (-8.0 - this.sceneZ) * 0.15;
+        }
+        this.scene.position.set(0, -2, this.sceneZ);
+        if (this.vthree.oscValue[1] == 68 || this.isDebug68) {
+            // for(let i =0; i < this.uniforms.length; i++)
+            // {
+            this.uniform.vGlitchArea.value = 0.3;
+            // }
+            // this.scene.position.set(0,-0.5,-4.0);
+        }
+        if (this.vthree.oscValue[1] == 69 || this.isDebug69) {
+            // for(let i =0; i < this.uniforms.length; i++)
+            // {
+            this.uniform.vGlitchArea.value = this.vglitchValue;
+            // this.scene.position.set(0,-1,-9.0);
+            // }
+            this.pariking_materials.wireframe = true;
+        }
+        if (this.vthree.oscValue[1] == 70 || this.isDebug70) {
+            // for(let i =0; i < this.uniforms.length; i++)
+            // {
+            this.isGlitch01 = true;
+        }
+        if (this.isGlitch01) {
+            if (this.vglitchValue > 0.01) {
+                this.vglitchValue -= 0.003;
+            }
+            this.uniform.vGlitchArea.value = this.vglitchValue;
+            // this.scene.position.set(0,-1,-9.0);
+            // }
+            this.pariking_materials.wireframe = true;
+        }
+        if (this.vthree.oscValue[1] == 71 || this.isDebug71) {
+            this.isGlitch01 = false;
+            this.isGlitch02 = true;
+        }
+        if (this.isGlitch02) {
+            if (this.vglitchValue <= 1.0) {
+                this.vglitchValue *= 1.015;
+            }
+            // if(this.vglitchValue >= 2.9)
+            // {
+            this.sceneZ += (2.0 - this.sceneZ) * 0.02;
+            // }
+            console.log(this.vglitchValue);
+            this.uniform.vGlitchArea.value = this.vglitchValue;
+            // this.scene.position.set(0,-1,-9.0);
+            this.pariking_materials.wireframe = true;
+        }
+        this.scene.rotateY(0.01);
+        this.scene.rotateX(0.005);
+    };
+    return Scene03;
+}());
+/* harmony default export */ __webpack_exports__["a"] = (Scene03);
+
+
+/***/ }),
+/* 34 */
+/***/ (function(module, exports) {
+
+module.exports = "vec3 mod289(vec3 x) {\n      return x - floor(x * (1.0 / 289.0)) * 289.0;\n    }\n\n    vec4 mod289(vec4 x) {\n      return x - floor(x * (1.0 / 289.0)) * 289.0;\n    }\n\n    vec4 permute(vec4 x) {\n         return mod289(((x*34.0)+1.0)*x);\n    }\n\n    vec4 taylorInvSqrt(vec4 r)\n    {\n      return 1.79284291400159 - 0.85373472095314 * r;\n    }\n\n    float snoise(vec3 v)\n      {\n      const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;\n      const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);\n\n    // First corner\n      vec3 i  = floor(v + dot(v, C.yyy) );\n      vec3 x0 =   v - i + dot(i, C.xxx) ;\n\n    // Other corners\n      vec3 g = step(x0.yzx, x0.xyz);\n      vec3 l = 1.0 - g;\n      vec3 i1 = min( g.xyz, l.zxy );\n      vec3 i2 = max( g.xyz, l.zxy );\n\n      //   x0 = x0 - 0.0 + 0.0 * C.xxx;\n      //   x1 = x0 - i1  + 1.0 * C.xxx;\n      //   x2 = x0 - i2  + 2.0 * C.xxx;\n      //   x3 = x0 - 1.0 + 3.0 * C.xxx;\n      vec3 x1 = x0 - i1 + C.xxx;\n      vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y\n      vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y\n\n    // Permutations\n      i = mod289(i);\n      vec4 p = permute( permute( permute(\n                 i.z + vec4(0.0, i1.z, i2.z, 1.0 ))\n               + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))\n               + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));\n\n    // Gradients: 7x7 points over a square, mapped onto an octahedron.\n    // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)\n      float n_ = 0.142857142857; // 1.0/7.0\n      vec3  ns = n_ * D.wyz - D.xzx;\n\n      vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)\n\n      vec4 x_ = floor(j * ns.z);\n      vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)\n\n      vec4 x = x_ *ns.x + ns.yyyy;\n      vec4 y = y_ *ns.x + ns.yyyy;\n      vec4 h = 1.0 - abs(x) - abs(y);\n\n      vec4 b0 = vec4( x.xy, y.xy );\n      vec4 b1 = vec4( x.zw, y.zw );\n\n      //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;\n      //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;\n      vec4 s0 = floor(b0)*2.0 + 1.0;\n      vec4 s1 = floor(b1)*2.0 + 1.0;\n      vec4 sh = -step(h, vec4(0.0));\n\n      vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;\n      vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;\n\n      vec3 p0 = vec3(a0.xy,h.x);\n      vec3 p1 = vec3(a0.zw,h.y);\n      vec3 p2 = vec3(a1.xy,h.z);\n      vec3 p3 = vec3(a1.zw,h.w);\n\n    //Normalise gradients\n      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));\n      p0 *= norm.x;\n      p1 *= norm.y;\n      p2 *= norm.z;\n      p3 *= norm.w;\n\n    // Mix final noise value\n      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);\n      m = m * m;\n      return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),\n                                    dot(p2,x2), dot(p3,x3) ) );\n      }\n\n    vec3 snoiseVec3( vec3 x ){\n\n      float s  = snoise(vec3( x ));\n      float s1 = snoise(vec3( x.y - 19.1 , x.z + 33.4 , x.x + 47.2 ));\n      float s2 = snoise(vec3( x.z + 74.2 , x.x - 124.5 , x.y + 99.4 ));\n      vec3 c = vec3( s , s1 , s2 );\n      return c;\n\n    }\n\n\n    vec3 curlNoise( vec3 p ){\n\n      const float e = .1;\n      vec3 dx = vec3( e   , 0.0 , 0.0 );\n      vec3 dy = vec3( 0.0 , e   , 0.0 );\n      vec3 dz = vec3( 0.0 , 0.0 , e   );\n\n      vec3 p_x0 = snoiseVec3( p - dx );\n      vec3 p_x1 = snoiseVec3( p + dx );\n      vec3 p_y0 = snoiseVec3( p - dy );\n      vec3 p_y1 = snoiseVec3( p + dy );\n      vec3 p_z0 = snoiseVec3( p - dz );\n      vec3 p_z1 = snoiseVec3( p + dz );\n\n      float x = p_y1.z - p_y0.z - p_z1.y + p_z0.y;\n      float y = p_z1.x - p_z0.x - p_x1.z + p_x0.z;\n      float z = p_x1.y - p_x0.y - p_y1.x + p_y0.x;\n\n      const float divisor = 1.0 / ( 2.0 * e );\n      return normalize( vec3( x , y , z ) * divisor );\n\n    }\n    uniform vec3 glitchVec;\n    uniform float glitchDist;\n    varying vec2 vUv;\n    varying vec3 vPos;\n    uniform float time;\n    float pi = 3.1415926;\n    uniform float vGlitchArea;\n    uniform int animationNum;\n    void main()\n    {\n        vUv = uv;\n        float dist = mod(time, pi/2.0);\n\n        vec3 noisePos = curlNoise(vec3(position.xy,time));\n\n        vec3 glitchpos = noisePos * vGlitchArea;\n\n        vec3 _position = position.xyz;\n        if(animationNum == 0)\n        {\n            _position = position.xyz;\n        }\n\n        if(animationNum == 1)\n        {\n            _position = position.xyz + glitchpos;\n        }\n\n        if(animationNum == 2)\n       {\n           _position = position.xyz + glitchpos;\n       }\n        if(animationNum == 3)\n        {\n            vec3 n = curlNoise(position.xyz);\n           _position= position.xyz;\n           _position.x += abs(n.x) * dist * glitchVec.x * 9.0;\n           //_position.z += dist* 9.0;\n        }\n        vPos = _position;\n        vec4 mvPosition = modelViewMatrix * vec4( _position, 1.0 );\n        gl_Position = projectionMatrix * mvPosition;\n\n\n    }"
+
+/***/ }),
+/* 35 */
+/***/ (function(module, exports) {
+
+module.exports = "vec3 mod289(vec3 x) {\n          return x - floor(x * (1.0 / 289.0)) * 289.0;\n        }\n\n        vec4 mod289(vec4 x) {\n          return x - floor(x * (1.0 / 289.0)) * 289.0;\n        }\n\n        vec4 permute(vec4 x) {\n             return mod289(((x*34.0)+1.0)*x);\n        }\n\n        vec4 taylorInvSqrt(vec4 r)\n        {\n          return 1.79284291400159 - 0.85373472095314 * r;\n        }\n\n        float snoise(vec3 v)\n          {\n          const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;\n          const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);\n\n        // First corner\n          vec3 i  = floor(v + dot(v, C.yyy) );\n          vec3 x0 =   v - i + dot(i, C.xxx) ;\n\n        // Other corners\n          vec3 g = step(x0.yzx, x0.xyz);\n          vec3 l = 1.0 - g;\n          vec3 i1 = min( g.xyz, l.zxy );\n          vec3 i2 = max( g.xyz, l.zxy );\n\n          //   x0 = x0 - 0.0 + 0.0 * C.xxx;\n          //   x1 = x0 - i1  + 1.0 * C.xxx;\n          //   x2 = x0 - i2  + 2.0 * C.xxx;\n          //   x3 = x0 - 1.0 + 3.0 * C.xxx;\n          vec3 x1 = x0 - i1 + C.xxx;\n          vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y\n          vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y\n\n        // Permutations\n          i = mod289(i);\n          vec4 p = permute( permute( permute(\n                     i.z + vec4(0.0, i1.z, i2.z, 1.0 ))\n                   + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))\n                   + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));\n\n        // Gradients: 7x7 points over a square, mapped onto an octahedron.\n        // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)\n          float n_ = 0.142857142857; // 1.0/7.0\n          vec3  ns = n_ * D.wyz - D.xzx;\n\n          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)\n\n          vec4 x_ = floor(j * ns.z);\n          vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)\n\n          vec4 x = x_ *ns.x + ns.yyyy;\n          vec4 y = y_ *ns.x + ns.yyyy;\n          vec4 h = 1.0 - abs(x) - abs(y);\n\n          vec4 b0 = vec4( x.xy, y.xy );\n          vec4 b1 = vec4( x.zw, y.zw );\n\n          //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;\n          //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;\n          vec4 s0 = floor(b0)*2.0 + 1.0;\n          vec4 s1 = floor(b1)*2.0 + 1.0;\n          vec4 sh = -step(h, vec4(0.0));\n\n          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;\n          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;\n\n          vec3 p0 = vec3(a0.xy,h.x);\n          vec3 p1 = vec3(a0.zw,h.y);\n          vec3 p2 = vec3(a1.xy,h.z);\n          vec3 p3 = vec3(a1.zw,h.w);\n\n        //Normalise gradients\n          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));\n          p0 *= norm.x;\n          p1 *= norm.y;\n          p2 *= norm.z;\n          p3 *= norm.w;\n\n        // Mix final noise value\n          vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);\n          m = m * m;\n          return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),\n                                        dot(p2,x2), dot(p3,x3) ) );\n          }\n\n        vec3 snoiseVec3( vec3 x ){\n\n          float s  = snoise(vec3( x ));\n          float s1 = snoise(vec3( x.y - 19.1 , x.z + 33.4 , x.x + 47.2 ));\n          float s2 = snoise(vec3( x.z + 74.2 , x.x - 124.5 , x.y + 99.4 ));\n          vec3 c = vec3( s , s1 , s2 );\n          return c;\n\n        }\n\n\n        vec3 curlNoise( vec3 p ){\n\n          const float e = .1;\n          vec3 dx = vec3( e   , 0.0 , 0.0 );\n          vec3 dy = vec3( 0.0 , e   , 0.0 );\n          vec3 dz = vec3( 0.0 , 0.0 , e   );\n\n          vec3 p_x0 = snoiseVec3( p - dx );\n          vec3 p_x1 = snoiseVec3( p + dx );\n          vec3 p_y0 = snoiseVec3( p - dy );\n          vec3 p_y1 = snoiseVec3( p + dy );\n          vec3 p_z0 = snoiseVec3( p - dz );\n          vec3 p_z1 = snoiseVec3( p + dz );\n\n          float x = p_y1.z - p_y0.z - p_z1.y + p_z0.y;\n          float y = p_z1.x - p_z0.x - p_x1.z + p_x0.z;\n          float z = p_x1.y - p_x0.y - p_y1.x + p_y0.x;\n\n          const float divisor = 1.0 / ( 2.0 * e );\n          return normalize( vec3( x , y , z ) * divisor );\n\n        }\n    varying vec2 vUv;\n    varying vec3 vPos;\n    uniform bool isDisplay;\n    uniform sampler2D texture;\n    uniform int animationNum;\n    uniform float time;\n    void main( void ) {\n          vec3 noise = curlNoise(vec3(vPos.xy,time)) * 0.01;\n          vec4 color = vec4(texture2D( texture, vUv ).rgb,1.0);\n          if(animationNum == 0)\n          {\n            color = vec4(texture2D( texture, vUv ).rgb,1.0);\n          }\n\n          if(animationNum == 1)\n          {\n            color = vec4(texture2D( texture, vUv ).rgb,1.0);\n          }\n\n          if(animationNum == 2)\n            {\n              color = vec4(texture2D( texture, vUv+noise.xy ).rgb,1.0);\n            }\n          gl_FragColor = color;\n\n\n    }"
+
+/***/ }),
+/* 36 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_three__ = __webpack_require__(0);
+
+var vert = __webpack_require__(37);
+var frag = __webpack_require__(38);
+var logo = __webpack_require__(39);
+// *********** ひとつめのシーン *********** //
+var Home = /** @class */ (function () {
+    // ******************************************************
+    function Home(renderer, gui, vthree) {
+        this.name = "home";
+        this.width = 0;
+        this.height = 0;
+        this.isShaderReplace = true;
+        this.renderer = renderer;
+        this.gui = gui;
+        this.vthree = vthree;
+        this.createScene();
+        console.log("scene created!");
+    }
+    // ******************************************************
+    Home.prototype.createScene = function () {
+        // this.vthree.progress.push({"home":0});
+        this.scene = new __WEBPACK_IMPORTED_MODULE_0_three__["Scene"]();
+        // 立方体のジオメトリーを作成
+        this.geometry = new __WEBPACK_IMPORTED_MODULE_0_three__["BoxGeometry"](1, 1, 1);
+        // 緑のマテリアルを作成
+        this.material = new __WEBPACK_IMPORTED_MODULE_0_three__["MeshBasicMaterial"]({ color: 0x00ff00 });
+        // 上記作成のジオメトリーとマテリアルを合わせてメッシュを生成
+        this.cube = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](this.geometry, this.material);
+        this.cube.position.z = -1;
+        // メッシュをシーンに追加
+        this.scene.add(this.cube);
+        this.scene.add(new __WEBPACK_IMPORTED_MODULE_0_three__["AmbientLight"](0xffffff, 1.0));
+        // カメラを作成
+        this.width = window.innerWidth;
+        this.height = this.width / 2;
+        var aspect = this.width / this.height;
+        // let frustumSize = 1000;
+        this.camera = new __WEBPACK_IMPORTED_MODULE_0_three__["OrthographicCamera"](this.width / -2, this.width / 2, this.height / 2, this.height / -2, 1, 1000);
+        // カメラ位置を設定
+        // this.camera.position.y = 400;
+        this.texture = new Image();
+        this.texture.src = logo;
+        var tex = new __WEBPACK_IMPORTED_MODULE_0_three__["Texture"]();
+        tex.needsUpdate = true;
+        tex.image = this.texture;
+        this.uniforms = {
+            texture: { value: tex },
+            u_time: { value: 0.0 },
+            noiseSeed: { value: 0.1 },
+            noiseScale: { value: 0.1 },
+            time_scale_vertex: { value: 0.0 },
+            noiseSeed_vertex: { value: 0.1 },
+            noiseScale_vertex: { value: 0.1 },
+            distance_threshold: { value: 0.3 },
+            display: { value: true }
+        };
+        // 立方体のジオメトリーを作成
+        var geometry = new __WEBPACK_IMPORTED_MODULE_0_three__["PlaneGeometry"](this.width, this.height);
+        // 緑のマテリアルを作成
+        var mat = new __WEBPACK_IMPORTED_MODULE_0_three__["ShaderMaterial"]({
+            uniforms: this.uniforms,
+            vertexShader: vert,
+            fragmentShader: frag,
+            side: __WEBPACK_IMPORTED_MODULE_0_three__["DoubleSide"]
+        });
+        //
+        var mesh = new __WEBPACK_IMPORTED_MODULE_0_three__["Mesh"](geometry, mat);
+        mesh.position.z = -1;
+        this.scene.add(mesh);
+        // let p = new THREE.PlaneGeometry(500,250);
+        // let m = new THREE.MeshBasicMaterial({color:0xffffff,map:new THREE.TextureLoader().load( this.texture.src )});
+        // let _mesh = new THREE.Mesh(p,m);
+        // _mesh.position.z = -1;
+        // this.scene.add(_mesh);
+        //
+        // var geometry = new THREE.BoxGeometry( 50, 50, 50 );
+        // for ( var i = 0; i < 2000; i ++ ) {
+        //     var object = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { color: Math.random() * 0xffffff } ) );
+        //     object.position.x = Math.random() * 800 - 400;
+        //     object.position.y = Math.random() * 800 - 400;
+        //     object.position.z = Math.random() * 800 - 400;
+        //     object.rotation.x = Math.random() * 2 * Math.PI;
+        //     object.rotation.y = Math.random() * 2 * Math.PI;
+        //     object.rotation.z = Math.random() * 2 * Math.PI;
+        //     object.scale.x = Math.random() + 0.5;
+        //     object.scale.y = Math.random() + 0.5;
+        //     object.scale.z = Math.random() + 0.5;
+        //     this.scene.add( object );
+        // }
+        this.vthree.progress[this.name] = 100;
+    };
+    Home.prototype.Awake = function () {
+        this.update();
+        this.vthree.isFistUpdate[0] = true;
+    };
+    Home.prototype.replaceShader = function () {
+    };
+    // ******************************************************
+    Home.prototype.click = function () {
+    };
+    // ******************************************************
+    Home.prototype.keyUp = function (e) {
+    };
+    // ******************************************************
+    Home.prototype.mouseMove = function (e) {
+    };
+    // ******************************************************
+    Home.prototype.keyDown = function (e) {
+        if (e.key == "R") {
+            // this.replaceShader();
+        }
+    };
+    // ******************************************************
+    Home.prototype.onMouseDown = function (e) {
+    };
+    Home.prototype.reset = function () {
+    };
+    // ******************************************************
+    Home.prototype.update = function (time) {
+        console.log("home:update");
+        this.uniforms.u_time.value += 0.01;
+        // this.cube.rotateY(0.01);
+        // this.cube.rotateX(0.005);
+    };
+    return Home;
+}());
+/* harmony default export */ __webpack_exports__["a"] = (Home);
+
+
+/***/ }),
+/* 37 */
+/***/ (function(module, exports) {
+
+module.exports = "varying vec3 vPos;\nvarying vec2 vUv;\nvoid main() {\n    vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );\n    vPos = position;\n    vUv = uv;\n    gl_Position = projectionMatrix * mvPosition;\n}"
+
+/***/ }),
+/* 38 */
+/***/ (function(module, exports) {
+
+module.exports = "\n#ifdef GL_ES\nprecision mediump float;\n#endif\n\nuniform float u_time;\n\nvarying vec2 vUv;\nvarying vec3 vPos;\nuniform sampler2D texture;\n// Based on the example from\n// https://www.shadertoy.com/view/Ml3SRf\n\n\n#define PI 3.14159265359\n#define TWO_PI 6.28318530718\n\nfloat random (in vec2 _st) {\n    return fract(sin(dot(_st.xy, vec2(12.9898,78.233))) * 43758.54531237);\n}\n\nfloat noise (in vec2 _st) {\n    vec2 i = floor(_st);\n    vec2 f = fract(_st);\n\n    float a = random(i);\n    float b = random(i + vec2(1.0, 0.0));\n    float c = random(i + vec2(0.0, 1.0));\n    float d = random(i + vec2(1.0, 1.0));\n\n    vec2 u = f * f * (3. - 2.0 * f);\n\n    return mix(a, b, u.x) +\n            (c - a)* u.y * (1. - u.x) +\n            (d - b) * u.x * u.y;\n}\n\n#define NUM_OCTAVES 4\n\nfloat fbm ( in vec2 _st) {\n    float v = 0.0;\n    float a = 0.5;\n    vec2 shift = vec2(10.0-vec2(u_time*0.2));\n    mat2 rot = mat2(cos(0.1), sin(0.1),\n                    -sin(0.1), cos(0.1));\n    for (int i = 0; i < NUM_OCTAVES; ++i) {\n        v += a * noise(_st);\n        _st = rot * _st * 1.6+sin(u_time*0.2)*2.0 + shift;\n        a *= 0.5;\n    }\n    return v;\n}\n\nvoid main() {\n    vec2 st = vUv;\n\n    vec3 color = vec3(0.);\n    vec2 a = vec2(0.);\n    vec2 b = vec2(0.);\n    vec2 c = vec2(60.,800.);\n\n\n     a.x = fbm( st);\n    a.y = fbm( st + vec2(1.0));\n\n    b.x = fbm( st + 3.*a);\n    b.y = fbm( st);\n\n    c.x = fbm( st + 7.0*b + vec2(0.7,.2)+ 0.215*u_time );\n    c.y = fbm( st + 3.944*b + vec2(.3,12.8)+ 0.16*u_time);\n\n    float f = fbm(st+b+c);\n\n    color = mix(vec3(0.861,0.522,0.990), vec3(0.134,0.658,0.835), clamp((f*f),0.2, 1.0));\n    color = mix(color, vec3(0.289,0.930,0.506), clamp(c.x,0.040, 0.208));\n    float nx = noise(vec2(st.x*18.0,st.y+u_time*0.1))*0.1-0.05;\n    float ny = noise(vec2(st.y*4.0,st.y+u_time*0.2))*0.1-0.05;\n    vec4 textureColor = texture2D(texture,vec2(st.x+nx, st.y-ny-0.2));\n    vec3 finalColor = vec3(f*1.5*color);\n    // vec3 finalColor = vec3(st.y+f,f,st.x+f);\n//\n//    if(textureColor.a > 0.0)\n//    {\n    float _r = texture2D(texture,vec2(st.x+nx+0.08*(st.x-0.5), st.y-ny-0.2)).r;\n    float _g = texture2D(texture,vec2(st.x+nx+0.09*(st.x-0.5), st.y-ny-0.2)).g;\n    float _b = texture2D(texture,vec2(st.x+nx+0.1*(st.x-0.5), st.y-ny-0.2)).b;\n\n        finalColor *= (vec3(_r,_g,_b) + vec3(0.2,ny,0.2));\n//    }\n    gl_FragColor = vec4(finalColor,1.0);\n\n\n}"
+
+/***/ }),
+/* 39 */
+/***/ (function(module, exports) {
+
+module.exports = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAD6KADAAQAAAABAAAB9AAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgB9APoAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAAQEBAQEBAgEBAgMCAgIDBAMDAwMEBQQEBAQEBQYFBQUFBQUGBgYGBgYGBgcHBwcHBwgICAgICQkJCQkJCQkJCf/bAEMBAQEBAgICBAICBAkGBQYJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCf/dAAQAP//aAAwDAQACEQMRAD8A/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0P7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9H+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/S/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0/7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9T+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/V/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/1v7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9f+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/Q/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0f7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9L+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/T/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/1P7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigDxX4j/ALSf7Onwc1yLwz8XfH3hzwrqU8C3UdprGq2djO8DMyLKsdxKjmMujqGAwSrDOQa8/wD+G7P2If8Aosngb/wodN/+SK/jG/4Om/8AlIJ4P/7J7p//AKdtWr8KPg3+yp+0x+0Rp97q3wG8AeIPGVrpsixXcujafcXqQSOCyrI0KMFZgCQDjIoA/wBRD/huz9iH/osngb/wodN/+SK1tJ/bN/Y+164W00P4r+Dr2VzhUg13T5GJ9AFnJJr/ADPv+HZX/BRP/oh3jn/wRX3/AMark/En7Af7dPg+FrnxP8GfHFjCg3NLLoGorGAOSd/kbeO/PFAH+rjperaVrlhHqmi3MV5azDMc0DrJGw9VZSQfwrQr/Iv+Fvx1+P8A+zd4nbVvhB4q1vwZqlvJiX+zrueyfcpwUlRGUMOMMrgg9CK/pz/4J5/8HMHjzQNZsPhl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oooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/S/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0/7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9T+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/V/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/1v7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9f+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/Q/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0f7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9L+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/T/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/1P7+KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9X+/iiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/W/v4ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/2Q=="
+
+/***/ }),
+/* 40 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_dat_gui__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0_dat_gui___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_0_dat_gui__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__GUIParameters__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__GUIParameters__ = __webpack_require__(44);
 
 
 var GUI = /** @class */ (function () {
@@ -56107,6 +71085,7 @@ var GUI = /** @class */ (function () {
         console.log(this.parameters);
         // this.gui = new dat.GUI({ load: data, width:400});
         this.gui = new __WEBPACK_IMPORTED_MODULE_0_dat_gui__["GUI"](this.parameters);
+        this.gui.width = 400;
         // this.gui.remember();
         this.gui.remember(this.parameters);
         this.rendering = this.gui.addFolder('animation');
@@ -56126,16 +71105,20 @@ var GUI = /** @class */ (function () {
         this.particle.add(this.parameters, "particleStartX", -3.0, 3.0);
         this.particle.add(this.parameters, "particleStartY", -5.0, 5.0);
         this.particle.add(this.parameters, "particleStartZ", -1.0, 1.0);
-        this.image.add(this.parameters, "image_speed", 0.0, 0.1);
+        this.image.add(this.parameters, "image_speed", 0.0, 0.01);
         this.image.add(this.parameters, "image_noiseScale", 0.0, 1.0);
-        this.image.add(this.parameters, "image_noiseSeed", 0.0, 3.0);
-        this.image.add(this.parameters, "image_speed_scale__vertex", 0.0, 0.1);
-        this.image.add(this.parameters, "image_noiseScale_vertex", 0.0, 10.0);
-        this.image.add(this.parameters, "image_noiseSeed_vertex", 0.0, 15.0);
-        this.image.add(this.parameters, "image_distance_threshold", 0.0, 2.0);
-        this.image.add(this.parameters, "image_positionX", -30.0, 30.0);
-        this.image.add(this.parameters, "image_positionY", -30.0, 30.0);
-        this.image.add(this.parameters, "image_positionZ", -32.0, 32.0);
+        this.image.add(this.parameters, "image_noiseSeed", 0.0, 0.05);
+        // this.image.add(this.parameters,"image_positionX",-30.0,30.0);
+        // this.image.add(this.parameters,"image_positionY",-30.0,30.0);
+        // this.image.add(this.parameters,"image_positionZ",-500.0,100.0);
+        // this.image.add(this.parameters,"imagePos");
+        this.image.add(this.parameters, "image_rotationX", -1.0, 1.0);
+        this.image.add(this.parameters, "image_rotationY", -1.0, 1.0);
+        this.image.add(this.parameters, "image_rotationZ", -0.100, 0.100);
+        this.image.add(this.parameters, "image_translatedZ", -1000, 0);
+        this.image.add(this.parameters, "rotationDulation", 0.0, 5.0);
+        this.image.add(this.parameters, "translateDulation", 0.0, 5.0);
+        this.image.add(this.parameters, "colorDulation", 0.0, 10.0);
         this.parking.add(this.parameters, "parking_vGlitchArea", 0.0, 10.0);
         this.pal.add(this.parameters, "pal_position_x", -5.0, 5.0);
         this.pal.add(this.parameters, "scene_rotation_y", -1.0, 1.0);
@@ -56147,14 +71130,14 @@ var GUI = /** @class */ (function () {
 
 
 /***/ }),
-/* 7 */
+/* 41 */
 /***/ (function(module, exports, __webpack_require__) {
 
-module.exports = __webpack_require__(8)
-module.exports.color = __webpack_require__(9)
+module.exports = __webpack_require__(42)
+module.exports.color = __webpack_require__(43)
 
 /***/ }),
-/* 8 */
+/* 42 */
 /***/ (function(module, exports) {
 
 /**
@@ -59819,7 +74802,7 @@ dat.dom.dom,
 dat.utils.common);
 
 /***/ }),
-/* 9 */
+/* 43 */
 /***/ (function(module, exports) {
 
 /**
@@ -60579,7 +75562,7 @@ dat.color.toString,
 dat.utils.common);
 
 /***/ }),
-/* 10 */
+/* 44 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -60592,16 +75575,23 @@ var GUIParameters = /** @class */ (function () {
         this.particleStartX = 0.1;
         this.particleStartY = 0.1;
         this.particleStartZ = 0.1;
-        this.image_speed = 0.005;
-        this.image_noiseScale = 0.1;
-        this.image_noiseSeed = 0.1;
+        this.image_speed = 0.003;
+        this.image_noiseScale = 0.74;
+        this.image_noiseSeed = 0.002;
         this.image_speed_scale__vertex = 0.005;
         this.image_noiseScale_vertex = 0.1;
-        this.image_noiseSeed_vertex = 0.1;
-        this.image_distance_threshold = 0.3;
+        this.image_noiseSeed_vertex = 0.006;
+        // public imagePos = {x:1,y:1,Z:1};
         this.image_positionX = 0.0;
         this.image_positionY = 0.0;
-        this.image_positionZ = 29.5;
+        this.image_positionZ = 0.0;
+        this.image_rotationX = -0.4000;
+        this.image_rotationY = -0.2600;
+        this.image_rotationZ = 0.00001;
+        this.image_translatedZ = -350.0;
+        this.rotationDulation = 1.4;
+        this.translateDulation = 2.0;
+        this.colorDulation = 6.0;
         this.parking_vGlitchArea = 0.001;
         this.pal_position_x = -1.5;
         this.scene_rotation_y = 0.0;
