@@ -395,7 +395,7 @@ export default class VThree
                     }
                 }
             }
-            $('.process').text(Math.ceil(p/4.0-10));
+            $('.bar').css("width",Math.ceil(p/4.0-10)+"%");
 
         }
         if(this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
@@ -409,7 +409,7 @@ export default class VThree
                 this.awakedNum++;
             }
 
-            $('.process').text(90 + 10/4 * this.awakedNum);
+            $('.bar').css("width",90 + 10/4 * this.awakedNum +"%");
         }
 
         if(this.scenes.length == this.awakedNum)
