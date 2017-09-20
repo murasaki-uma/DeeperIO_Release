@@ -159,6 +159,8 @@ export default class Scene03{
 
 
 
+
+
         this.createWireBox();
 
     }
