@@ -75,6 +75,11 @@ export default class Scene02{
 
     private effectFilm:any;
 
+    public onProgress:any;
+    public onError:any;
+    public loader:any;
+
+
 
 
     // ******************************************************
@@ -107,7 +112,7 @@ export default class Scene02{
         this.scene.add(directionalLight);
 
 
-        var onProgress =  (xhr)=> {
+        this.onProgress =  (xhr)=> {
             if (xhr.lengthComputable) {
                 var percentComplete = xhr.loaded / xhr.total * 100;
                 this.vthree.progress[this.name] = Math.round(percentComplete)-1;
@@ -121,19 +126,20 @@ export default class Scene02{
                 console.log(Math.round(percentComplete) + '% downloaded');
             }
         };
-        var onError = function (xhr) {
+        this.onError = function (xhr) {
         };
 
 
 
 
 
-        let loader = new THREE.JSONLoader();
+        this.loader = new THREE.JSONLoader();
 
-        loader.load( "models/pal/pal_decimated.json", ( geometry, materials )=> { //第１引数はジオメトリー、第２引数はマテリアルが自動的に取得）
+        this.loader.load( "models/pal/pal_decimated.json", ( geometry, materials )=> {
 
-        var faceMaterial = new THREE.MultiMaterial( materials );
-            let mesh = new THREE.Mesh( geometry, faceMaterial );
+            var faceMaterial = materials ;
+            var geo = geometry;
+            let mesh = new THREE.Mesh( geo, faceMaterial );
             this.pal = mesh;
             // mesh.position.set(-1,0.5,0);
             // mesh.scale.set(1.5,1,1);
@@ -141,12 +147,7 @@ export default class Scene02{
             console.log(mesh);
             this.scene.add( mesh );
             this.vthree.progress[this.name] += 1;
-        }, onProgress,onError);
-
-
-
-
-
+        }, this.onProgress,this.onError);
 
         // カメラを作成
         this.camera = new THREE.PerspectiveCamera(105, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -155,7 +156,6 @@ export default class Scene02{
         this.camera.position.y = 3;
         this.camera.position.z = 30;
         this.initComputeRenderer();
-
         this.initPostProcessing();
 
 
@@ -165,8 +165,7 @@ export default class Scene02{
     {
 
 
-        if(this.vthree.progress[this.name] == 100)
-        {
+
 
             try{
                 this.update();
@@ -176,11 +175,18 @@ export default class Scene02{
             {
                 console.log(e);
                 this.vthree.isFistUpdate[2] = false;
+
+                this.loader.load( "models/pal/pal_decimated.json", ( geometry, materials )=> {
+
+                    this.pal.materi = materials;
+                    // this.vthree.progress[this.name] += 1;
+                }, this.onProgress,this.onError);
+
                 return true;
             }
 
             this.vthree.isFistUpdate[2] = true;
-        }
+
 
 
     }
@@ -189,19 +195,19 @@ export default class Scene02{
     {
         // if(this.isShaderReplased)
         // {
-            this.replaceShader_WireWave(this.pal,0,false,this.update);
+            this.replaceShader_WireWave(this.pal,0,false);
         //     this.isShaderReplased = true;
         // }
 
     }
-    public replaceShader_WireWave=(object:any,isTransparent:number, isWire:boolean, callback: () => void)=>
+    public replaceShader_WireWave=(object:any,isTransparent:number, isWire:boolean)=>
     {
         if(!this.isShaderReplace)
         {
 
             console.log(object);
 
-            let materials = object.material.materials;
+            let materials = object.material;
             this.materials = materials;
             console.log(materials);
             for (let i = 0; i < materials.length; i++) {
@@ -243,7 +249,7 @@ export default class Scene02{
 
 
             return object;
-            callback();
+
             this.isShaderReplace = true;
         }
 
@@ -345,6 +351,7 @@ export default class Scene02{
 
     public click()
     {
+        console.log('click');
         // this.replaceShader_WireWave(this.pal,0,false);
         this.Awake();
 

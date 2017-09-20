@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import VThree from "./VThree";
 const NoiseUvShader_Frag = require("./GLSL/NoiseUvShader.frag");
 const NoiseUvShader_Vert = require("./GLSL/NoiseUvShader.vert");
-const texture = require('./texture/pal01_opt_min.png');
+const texture = require('./texture/pal01.png');
 const TimeLineMax = require('gsap/TimelineMax');
 const TimelineLite = require( 'gsap/TimelineLite');
 const TweenLite = require('gsap/TweenLite');

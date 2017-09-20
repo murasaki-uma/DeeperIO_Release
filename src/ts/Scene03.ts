@@ -21,10 +21,6 @@ class WireBox{
         geometery.vertices.push(new THREE.Vector3(0.5,-0.5,-0.5));
 
         let line = new THREE.Line(geometery);
-
-
-
-
     }
 }
 export default class Scene03{
@@ -59,12 +55,9 @@ export default class Scene03{
 
     public parkingMesh:THREE.Mesh;
 
-
-
     public onProgress:any;
     public onError:any;
     public loader:any;
-
 
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
@@ -164,8 +157,6 @@ export default class Scene03{
 
 
         this.createWireBox();
-
-
 
     }
 
@@ -430,6 +421,7 @@ export default class Scene03{
         this.isDebug69 = false;
         this.isDebug70 = false;
         this.isDebug71 = false;
+
     }
 
     // ******************************************************

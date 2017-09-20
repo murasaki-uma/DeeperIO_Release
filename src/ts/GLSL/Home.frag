@@ -6,7 +6,7 @@ precision mediump float;
 uniform float u_time;
 
 varying vec2 vUv;
-varying vec3 vPos;
+//varying vec3 vPos;
 uniform sampler2D texture;
 // Based on the example from
 // https://www.shadertoy.com/view/Ml3SRf

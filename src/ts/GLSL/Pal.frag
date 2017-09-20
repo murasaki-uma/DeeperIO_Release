@@ -7,6 +7,7 @@ float alpha;
 uniform bool isDisplay;
 void main( void ) {
 
+
         if(transparent == 1)
         {
             float d = distance(vec3(vPos.x,vPos.y,vPos.z), vec3(0,0,threshold));

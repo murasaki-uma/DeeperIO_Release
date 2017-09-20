@@ -412,6 +412,13 @@ export default class VThree
             $('.process').text(90 + 10/4 * this.awakedNum);
         }
 
+        if(this.scenes.length == this.awakedNum)
+        {
+
+        }
+
+
+
         this.stats.update(time);
         this.scenes[this.NUM].update(time, this.isUpdate);
 
