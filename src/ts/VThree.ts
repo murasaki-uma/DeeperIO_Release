@@ -40,7 +40,7 @@ export default class VThree
 
     public screenWidth:number = 0;
     public screenHeight:number = 0;
-    public maxWidth:number = 620;
+    public maxWidth:number = 1024;
 
     public progress:any;
 
