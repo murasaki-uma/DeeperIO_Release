@@ -195,7 +195,7 @@ export default class Home{
 
 
 
-        console.log("home:update");
+        // console.log("home:update");
         this.uniforms.u_time.value += 0.01;
 
         // this.cube.rotateY(0.01);

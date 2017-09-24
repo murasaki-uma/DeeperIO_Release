@@ -23,7 +23,7 @@ export default class GUI
         this.gui.width = 400;
 
         // this.gui.remember();
-        this.gui.remember(this.parameters);
+        // this.gui.remember(this.parameters);
 
 
         this.rendering = this.gui.addFolder('animation');

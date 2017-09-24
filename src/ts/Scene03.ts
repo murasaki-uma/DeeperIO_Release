@@ -59,6 +59,11 @@ export default class Scene03{
     public onError:any;
     public loader:any;
 
+    public rotateMouse_next:THREE.Vector3 = new THREE.Vector3(0,0,0);
+    public rotateMouse_now:THREE.Vector3 = new THREE.Vector3(0,0,0);
+
+    public isCameraRotate:boolean = true;
+
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
         this.renderer = renderer;
@@ -343,7 +348,11 @@ export default class Scene03{
     // ******************************************************
     public mouseMove(e:MouseEvent)
     {
+        let x = e.x/window.innerWidth - 0.5;
+        let y = e.y/window.innerHeight - 0.5;
 
+        this.rotateMouse_next.x = x;
+        this.rotateMouse_next.y = y;
     }
 
     // ******************************************************
@@ -399,6 +408,13 @@ export default class Scene03{
         }
 
 
+        if(e.key == "p")
+        {
+            this.uniform.isDisplay.value = !this.uniform.isDisplay.value;
+            this.sceneZ = -8.0;
+        }
+
+
     }
 
     // ******************************************************
@@ -424,6 +440,10 @@ export default class Scene03{
         this.isDebug69 = false;
         this.isDebug70 = false;
         this.isDebug71 = false;
+        this.uniform.isDisplay.value = true;
+        this.rotateMouse_next.set(0,0,0);
+        this.rotateMouse_now.set(0,0,0);
+        this.camera.rotation.set(0,0,0);
 
     }
 
@@ -434,7 +454,13 @@ export default class Scene03{
     {
 
 
+        if(this.isCameraRotate)
+        {
+            this.rotateMouse_now.x += (this.rotateMouse_next.x - this.rotateMouse_now.x) * 0.05;
+            this.rotateMouse_now.y += (this.rotateMouse_next.y - this.rotateMouse_now.y) * 0.05;
 
+            this.camera.rotation.set(-this.rotateMouse_now.y,-this.rotateMouse_now.x,0);
+        }
 
         this.uniform.time.value += 0.01;
 
@@ -447,9 +473,21 @@ export default class Scene03{
 
 
 
+        if(this.vthree.oscValue.node == '10' )
+        {
+            this.uniform.isDisplay.value = !this.uniform.isDisplay.value;
+        }
 
 
-        if(this.vthree.oscValue[1] == 68 || this.isDebug68)
+        if(this.vthree.oscValue.node == '05' )
+        {
+            this.isAnimationStart = true;
+        }
+
+
+
+
+        if(this.vthree.oscValue.node == '06' || this.isDebug68)
         {
             // for(let i =0; i < this.uniforms.length; i++)
             // {
@@ -458,7 +496,7 @@ export default class Scene03{
             // this.scene.position.set(0,-0.5,-4.0);
         }
 
-        if(this.vthree.oscValue[1] == 69 || this.isDebug69)
+        if(this.vthree.oscValue.node == '07' || this.isDebug69)
         {
             // for(let i =0; i < this.uniforms.length; i++)
             // {
@@ -470,7 +508,7 @@ export default class Scene03{
         }
 
 
-        if(this.vthree.oscValue[1] == 70 || this.isDebug70)
+        if(this.vthree.oscValue.node == '08' || this.isDebug70)
         {
             // for(let i =0; i < this.uniforms.length; i++)
             // {
@@ -491,7 +529,7 @@ export default class Scene03{
             this.pariking_materials.wireframe = true;
         }
 
-        if(this.vthree.oscValue[1] == 71 || this.isDebug71)
+        if(this.vthree.oscValue.node == '09' || this.isDebug71)
         {
             this.isGlitch01 = false;
             this.isGlitch02 = true;
@@ -506,7 +544,7 @@ export default class Scene03{
 
             // if(this.vglitchValue >= 2.9)
             // {
-                this.sceneZ += (2.0 - this.sceneZ) * 0.02;
+                this.sceneZ += (-2.0 - this.sceneZ) * 0.02;
             // }
 
             console.log(this.vglitchValue);

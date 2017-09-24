@@ -61,6 +61,11 @@ export default class Scene01{
     private effectFilm:any;
     public isShaderReplace:boolean = true;
 
+    public rotateMouse_next:THREE.Vector3 = new THREE.Vector3(0,0,0);
+    public rotateMouse_now:THREE.Vector3 = new THREE.Vector3(0,0,0);
+
+    public isCameraRotate:boolean = false;
+
     // ******************************************************
     constructor(renderer:THREE.WebGLRenderer,gui:GUI, vthree:VThree) {
         this.renderer = renderer;
@@ -199,6 +204,20 @@ export default class Scene01{
     // ******************************************************
     public mouseMove(e:MouseEvent)
     {
+        // console.log(e);
+        let x = e.x/window.innerWidth - 0.5;
+        let y = e.y/window.innerHeight - 0.5;
+
+        this.rotateMouse_next.x = x;
+        this.rotateMouse_next.y = y;
+
+        // this.camera.rotation.set(y,x,0);
+        // this.camera.rotateX(y);
+
+    }
+
+    public mouseCameraControl()
+    {
 
     }
 
@@ -220,6 +239,11 @@ export default class Scene01{
         this.image_uniform.noiseSeed.value = this.image_noiseSeed;
         this.isPlaneConstantMove = false;
         this.translatedZ = 0;
+        this.image_uniform.display.value = true;
+        this.isCameraRotate = false;
+        this.rotateMouse_next.set(0,0,0);
+        this.rotateMouse_now.set(0,0,0);
+        this.camera.rotation.set(0,0,0);
     }
 
     // ******************************************************
@@ -267,24 +291,38 @@ export default class Scene01{
         this.vthree.isFistUpdate[1] = true;
     }
     // ******************************************************
-    public update(time?:number)
-    {
+    public update(time?:number) {
 
+
+        if(this.isCameraRotate)
+        {
+            this.rotateMouse_now.x += (this.rotateMouse_next.x - this.rotateMouse_now.x) * 0.05;
+            this.rotateMouse_now.y += (this.rotateMouse_next.y - this.rotateMouse_now.y) * 0.05;
+
+            this.camera.rotation.set(-this.rotateMouse_now.y,-this.rotateMouse_now.x,0);
+        }
         this.counter++;
         this.effectFilm.uniforms.time += 0.01;
-        if(this.vthree.oscValue.length > 0)
-        {
 
 
-            if( this.vthree.oscValue[1] == 112)
 
-            {
-                this.isAnimationStart = true;
-
-            }
+        // console.log(this.vthree.oscValue.node);
+        if (this.vthree.oscValue.node == '01') {
+            this.isAnimationStart = true;
+            this.isTweenStart = true;
+            this.isCameraRotate = true;
 
         }
 
+
+        if (this.vthree.oscValue.node == '02')
+        {
+
+            if(Math.random() < 0.9)
+            {
+                this.image_uniform.display.value = !this.image_uniform.display.value;
+            }
+        }
 
         if(this.isAnimationStart)
         {
@@ -319,7 +357,7 @@ this.plane.rotateX(-this.planeRotateSpeed);
 
         if(this.isPlaneConstantMove)
         {
-            this.translatedZ -= 0.5;
+            this.translatedZ -= 0.2;
         }
         this.plane.position.set (
             this.gui.parameters.image_positionX,

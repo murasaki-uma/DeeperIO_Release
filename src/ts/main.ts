@@ -1,5 +1,6 @@
 declare function require(x: string): any;
 var css = require('../styl/main.styl');
+var sp = require('../pug/sp.pug');
 import * as THREE from 'three';
 import * as $ from 'jquery';
 
@@ -30,8 +31,62 @@ class Main
     private scene02:Scene02;
     private scene03:Scene03;
     private gui:GUI;
+    public socket:any;
     constructor()
     {
+
+
+
+
+        $('.close').on('click',function() {
+            $('.aboutText').stop().fadeOut('slow');
+        });
+
+        $('.about').on('click',function() {
+            $('.aboutText').stop().fadeIn('slow');
+        });
+        let easeTime = 200;
+        $('.playHigh').hover(function() {
+
+            $('.fillHigh').stop().animate({'opacity':'1'}, easeTime);
+            $(this).stop().addClass('hoveron');
+            $(this).stop().removeClass('hoverout');
+
+        },function() {
+
+            $('.fillHigh').stop().animate({'opacity':'0'}, easeTime);
+            $(this).stop().removeClass('hoveron');
+            $(this).stop().addClass('hoverout');
+
+        });
+
+        $('.playLow').hover(function() {
+
+            $('.fillLow').stop().animate({'opacity':'1'}, easeTime);
+            $(this).stop().addClass('hoveron');
+            $(this).stop().removeClass('hoverout');
+
+        },function() {
+
+            $('.fillLow').stop().animate({'opacity':'0'}, easeTime);
+            $(this).stop().removeClass('hoveron');
+            $(this).stop().addClass('hoverout');
+
+        });
+
+
+        $('.about').hover(function() {
+
+            $(this).stop().addClass('hoveron');
+            $(this).stop().removeClass('hoverout');
+
+        },function() {
+
+            $(this).stop().removeClass('hoveron');
+            $(this).stop().addClass('hoverout');
+        });
+
+
         this.gui = new GUI();
         this.vthree = new VThree();
         this.vthree.progress = {
@@ -50,8 +105,22 @@ class Main
         this.vthree.addScene(this.scene02);
         this.vthree.addScene(this.scene03);
         this.vthree.draw();
+
+
     }
 }
-window.addEventListener('DOMContentLoaded', () => {
-    const main = new Main();
-});
+
+var getDevice = (function(){
+    var ua = navigator.userAgent;
+    if(ua.indexOf('iPhone') > 0 || ua.indexOf('iPod') > 0 || ua.indexOf('Android') > 0 && ua.indexOf('Mobile') > 0){
+
+        $('.progressbar').stop().fadeOut("slow");
+
+    } else
+    {
+        const main = new Main();
+    }
+})();
+
+
+

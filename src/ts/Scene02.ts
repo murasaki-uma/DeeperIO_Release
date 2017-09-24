@@ -79,6 +79,12 @@ export default class Scene02{
     public onError:any;
     public loader:any;
 
+    public isWire:boolean = false;
+    public rotateMouse_next:THREE.Vector3 = new THREE.Vector3(0,0,0);
+    public rotateMouse_now:THREE.Vector3 = new THREE.Vector3(0,0,0);
+
+    public isCameraRotate:boolean = true;
+
 
 
 
@@ -150,13 +156,13 @@ export default class Scene02{
         }, this.onProgress,this.onError);
 
         // カメラを作成
-        this.camera = new THREE.PerspectiveCamera(105, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(95, window.innerWidth / window.innerHeight, 0.1, 1000);
         // カメラ位置を設定
         this.scene.scale.set(1.3, 1, 1);
         this.camera.position.y = 3;
         this.camera.position.z = 30;
         this.initComputeRenderer();
-        this.initPostProcessing();
+        // this.initPostProcessing();
 
 
     }
@@ -168,19 +174,19 @@ export default class Scene02{
 
 
             try{
-                this.update();
+                // this.update();
                 this.shaderReplace();
             }
             catch (e)
             {
-                console.log(e);
+                // console.log(e);
                 this.vthree.isFistUpdate[2] = false;
-
-                this.loader.load( "models/pal/pal_decimated.json", ( geometry, materials )=> {
-
-                    this.pal.materi = materials;
-                    // this.vthree.progress[this.name] += 1;
-                });
+                //
+                // this.loader.load( "models/pal/pal_decimated.json", ( geometry, materials )=> {
+                //
+                //     this.pal.materi = materials;
+                //     // this.vthree.progress[this.name] += 1;
+                // });
 
                 return true;
             }
@@ -327,6 +333,8 @@ export default class Scene02{
         var effectTiltshift = new THREE.ShaderPass(tiltshift );
         var effectBleach = new THREE.ShaderPass( shaderBleach );
         effectVignette.renderToScreen = true;
+        this.effectFilm.renderToScreen = true;
+
         this.composer = new THREE.EffectComposer( this.renderer );
         this.composer.addPass( new THREE.RenderPass( this.scene, this.camera ) );
         // this.composer.addPass( effectBloom );
@@ -335,9 +343,9 @@ export default class Scene02{
 
 
         this.composer.addPass( this.effectFilm );
-        this.composer.addPass( effectBleach );
-        this.composer.addPass( effectTiltshift );
-        this.composer.addPass( effectVignette    );
+        // this.composer.addPass( effectBleach );
+        // this.composer.addPass( effectTiltshift );
+        // this.composer.addPass( effectVignette    );
 
         this.isPostProcessing = true;
     }
@@ -412,6 +420,20 @@ export default class Scene02{
         }
 
 
+        if(e.key == "s")
+        {
+            for(let i = 0; i < this.uniforms.length; i++)
+            {
+
+                this.materials[i].wireframe = true;
+            }
+
+            // this.translateZ_pal = -7.0;
+            this.scaleZ = 1.0;
+            this.scene.scale.set(1.3,1,this.scaleZ);
+        }
+
+
         if(e.key == "e")
         {
 
@@ -431,7 +453,12 @@ export default class Scene02{
     // ******************************************************
     public mouseMove(e:MouseEvent)
     {
+        // console.log(e);
+        let x = e.x/window.innerWidth - 0.5;
+        let y = e.y/window.innerHeight - 0.5;
 
+        this.rotateMouse_next.x = x;
+        this.rotateMouse_next.y = y;
     }
 
     // ******************************************************
@@ -448,7 +475,7 @@ export default class Scene02{
         this.isScaleZ = false;
         this.scaleZ = 1.0;
         this.speedScaleZ = 0.0001;
-        this.isMoveToFront_Pal = false;
+        this.isMoveToFront_Pal = true;
         this.translateZ_pal = 0;
         this.glitchDist = 0.01;
         this.time = 0;
@@ -456,6 +483,9 @@ export default class Scene02{
         this.animationNum = 0.0;
         this.moveFlontSpeed =3.0;
         this.isWireGlitch = false;
+        this.rotateMouse_next.set(0,0,0);
+        this.rotateMouse_now.set(0,0,0);
+        this.camera.rotation.set(0,0,0);
 
         this.isEnd = false;
         this.scene.scale.set(1.3,1,this.scaleZ);
@@ -493,10 +523,23 @@ export default class Scene02{
 
     public update(time?:number)
     {
-        if(this.isUpdate)
-        {
 
-            this.effectFilm.uniforms.time.value += 0.1;
+        if(this.isCameraRotate)
+        {
+            this.rotateMouse_now.x += (this.rotateMouse_next.x - this.rotateMouse_now.x) * 0.05;
+            this.rotateMouse_now.y += (this.rotateMouse_next.y - this.rotateMouse_now.y) * 0.05;
+
+            this.camera.rotation.set(-this.rotateMouse_now.y,-this.rotateMouse_now.x,0);
+        }
+        // if(this.isUpdate && this.vthree.oscValue.node != '02' && this.vthree.oscValue.node != '03')
+        // {
+
+
+            if(this.isPostProcessing)
+            {
+                this.effectFilm.uniforms.time.value += 0.1;
+            }
+
             if(this.vthree.oscValue[1] == 0)
             {
                 this.reset()
@@ -509,14 +552,53 @@ export default class Scene02{
                 // this.replaceShader_WireWave(this.pal[0],0,false);
             }
 
-            if(this.vthree.oscValue[1] == 65)
+            // if(this.vthree.oscValue[1] == 65)
+            // {
+            //     this.isMoveToFront_Pal = true;
+            // }
+
+            if(this.vthree.oscValue.node == '11-1')
             {
+                // for(let i = 0; i < this.uniforms.length; i++)
+                // {
+                //
+                //     this.materials[i].wireframe = true;
+                // }
+                //
+                // // this.translateZ_pal = -7.0;
+                this.isScaleZ = false;
+                this.scaleZ = 1.0;
+                this.scene.scale.set(1.3,1,this.scaleZ);
+            }
+
+            if(this.vthree.oscValue.node == '13')
+            {
+
                 this.isMoveToFront_Pal = true;
+
+                for(let i = 0; i < this.uniforms.length; i++)
+                {
+
+                    this.uniforms[i].glitchDist.value = 0;
+                    this.materials[i].wireframe = false;
+                    this.uniforms[i].animationNum.value = 0;
+                }
+
+                this.isWireGlitch = false;
+                this.isScaleZ = false;
+                for(let i = 0; i < this.uniforms.length; i++)
+                {
+
+                    this.materials[i].wireframe = true;
+                }
+
+                // this.translateZ_pal = -7.0;
+                this.scaleZ = 1.0;
+                this.scene.scale.set(1.3,1,this.scaleZ);
             }
 
 
-
-            if(this.vthree.oscValue[1] == 66)
+            if(this.vthree.oscValue.node == '04')
             {
                 // this.isMoveToFront_Pal = true;
                 this.isScaleZ = true;
@@ -539,7 +621,7 @@ export default class Scene02{
             }
 
 
-            if(this.vthree.oscValue[1] == 75)
+            if(this.vthree.oscValue.node == '12')
             {
                 this.isWireGlitch = true;
                 // this.glitchDist = 0.01;
@@ -633,17 +715,7 @@ export default class Scene02{
 
             if(this.isMoveToFront_Pal)
             {
-                console.log(this.translateZ_pal);
-                if(this.translateZ_pal < -12.5)
-                {
 
-
-                    // this.reset();
-                    // this.isMoveToFront_Pal= true;
-                    this.resetandgo();
-
-
-                }
                 if(this.translateZ_pal < -9.7 && this.translateZ_pal > -9.8)
                 {
                     let p = Math.random();
@@ -666,17 +738,9 @@ export default class Scene02{
                         this.isMoveToFront_Pal = false;
                     }
                 }
-                this.moveFlontSpeed += (0.0001 - this.moveFlontSpeed) * 0.3;
-                this.translateZ_pal -= this.moveFlontSpeed;
-                if(this.isEnd)
-                {
 
-                    this.pal.translateZ(0);
-                    this.pal.translateY(this.translateZ_pal * 0.0005);
-                } else {
-                    this.pal.translateY(0);
-                    this.pal.translateZ(-this.translateZ_pal * 0.0005);
-                }
+
+                    this.pal.position.z += 0.007;
 
             }
 
@@ -685,7 +749,10 @@ export default class Scene02{
 
 
         }
-        this.composer.render();
-    }
+        if(this.isPostProcessing)
+        {
+            this.composer.render();
+        }
+    // }
 
 }

@@ -26,7 +26,7 @@ export default class GUIParameters
     public image_rotationX:number = -0.4000;
     public image_rotationY:number = -0.2600;
     public image_rotationZ:number = 0.00001;
-    public image_translatedZ:number = -350.0;
+    public image_translatedZ:number = -80.0;
 
     public rotationDulation:number = 1.4;
     public translateDulation:number = 2.0;

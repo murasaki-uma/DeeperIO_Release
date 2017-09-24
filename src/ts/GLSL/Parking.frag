@@ -146,6 +146,12 @@ vec3 mod289(vec3 x) {
             {
               color = vec4(texture2D( texture, vUv+noise.xy ).rgb,1.0);
             }
+
+          if(!isDisplay)
+          {
+            discard;
+          }
+
           gl_FragColor = color;
 
 

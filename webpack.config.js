@@ -21,6 +21,11 @@ module.exports = {
       template: 'src/pug/index.pug',  // この行を変更
       inject: true
     }),
+    new HtmlWebpackPlugin({
+      filename: 'sp.html',
+      template: 'src/pug/sp.pug',  // この行を変更
+      inject: true
+    }),
     new ExtractTextPlugin("./css/main.css"),
     new webpack.LoaderOptionsPlugin({
       minimize: true,
@@ -58,7 +63,7 @@ module.exports = {
         })
       },
       {
-        test: /\.(jpg|png|gif)$/,
+        test: /\.(jpg|png|gif|svg|)$/,
         loader: ['url-loader']
       },
       {
@@ -68,6 +73,15 @@ module.exports = {
       {
         test: /\.json$/,
         loader: 'json-loader'
+      },
+      {
+        test: /\.mp3$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {}
+          }
+        ]
       }
     ]
   },

@@ -2,9 +2,44 @@ doctype html
 html
     head
         meta(charset="utf-8")
+        script(src="/socket.io/socket.io.js")
+
     body
 
         .progressbar
 
             .bar
-            .outline
+            //.outline
+        .blackscreen
+        .menu
+            .buttons
+                .button
+                    .btn_fill.fillLow
+                    .btn_outline
+                    a(href="javascript:void(0);").playLow.play Dive -Low-
+
+                .button
+                    .btn_fill.fillHigh
+                    .btn_outline
+                    a(href="javascript:void(0);").playHigh.play Dive -High-
+
+            .about
+
+                a(href="javascript:void(0);").about about
+            .aboutText
+                p
+                    | deeper.io is audio and data visualize project.
+                    br
+                    | This is beta version yet.
+                    br
+                    | It will be updated soon. Looking forward to.
+                .close
+                    img(src="img/close.svg")
+                .sns
+                    p by murasaki
+                    a(href="https://twitter.com/murasaki_0606").twitter.snsicon
+                        img(src="img/twitter.svg")
+                    a(href="https://www.facebook.com/murasaki.uma").facebook.snsicon
+                        img(src="img/facebook.svg")
+                    a(href="https://www.instagram.com/murasaki9266/").instagram.snsicon
+                        img(src="img/instagram.svg")

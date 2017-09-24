@@ -3,8 +3,10 @@ declare function require(x: string): any;
 import * as $ from 'jquery';
 import 'imports-loader?THREE=three!../../node_modules/three/examples/js/controls/OrbitControls'
 const Stats = require('stats-js');
+const timeline = require('../json/fragValues.json');
+const bgm = require('../audio/bgm.mp3');
 // console.log(THREE.OrbitControls);
-
+console.log(timeline);
 export default class VThree
 {
     // 現在のシーンの番号
@@ -32,13 +34,13 @@ export default class VThree
 
     private debugCounter:number = 0;
 
-    public oscValue:any[] = [];
+    public oscValue:any = {node:"node"};
 
     public rendertarget:THREE.WebGLRenderTarget = null;
 
     public screenWidth:number = 0;
     public screenHeight:number = 0;
-    public maxWidth:number = 640;
+    public maxWidth:number = 620;
 
     public progress:any;
 
@@ -48,6 +50,16 @@ export default class VThree
     public awakedNum:number = 0;
     public isFistUpdate:boolean[] = [];
     public isAllSceneAwaking:boolean = false;
+
+    public progressingbarLength:number = 0.0;
+
+    public timeline:any[] = [];
+    public audio:any;
+public frameCount:number = 0;
+    public isTimeLineStart:boolean = false;
+
+    public isRelease:boolean = true;
+    public isMenuFadeIn:boolean = false;
     constructor(config?:any)
     {
 
@@ -61,6 +73,8 @@ export default class VThree
 
             // 初期化処理後、イベント登録
             this.init();
+            this.initTimeLine();
+            this.initAudio();
 
             window.addEventListener( 'resize', this.onWindowResize, false );
             window.addEventListener( 'click', this.onClick, false );
@@ -68,7 +82,58 @@ export default class VThree
             document.addEventListener("keydown", this.onKeyDown, true);
             document.addEventListener("keyup", this.onKeyUp, true);
             document.addEventListener("mousemove", this.onMouseMove, true);
+        $('.playHigh').on('click',{ value: 1 }, this.play);
+        $('.playLow').on('click',{ value: 0 }, this.play);
 
+    }
+
+    public initAudio()
+    {
+        console.log('audio start');
+        this.audio = new Audio();
+        this.audio.volume = 0.3;
+        this.audio.src = bgm;
+        // this.audio.play();
+    }
+
+    public play =(e)=>
+    {
+        //this.audio.play();
+        $('.blackscreen').fadeIn('slow');
+        $('.menu').stop().fadeOut("slow");
+        setTimeout(()=>{
+            $('.blackscreen').fadeOut(15000);
+            this.NUM = 1;
+            this.checkNum();
+            this.audio.play();
+            if(e.data.value == 0)
+            {
+                this.maxWidth = 640;
+            } else
+            {
+                this.maxWidth = 1024;
+            }
+
+            this.onWindowResize();
+            this.isTimeLineStart = true;
+        }, 1000);
+
+    }
+
+    public initTimeLine()
+    {
+
+        for(let i = 0; i < timeline.frags.length; i ++)
+        {
+            let start = timeline.frags[i].pos.x * timeline.framePerPixel;
+            this.timeline.push({
+                start:start/60,
+                end:(start + timeline.frags[i].sendingOscTime * timeline.framePerPixel)/60,
+                value:timeline.frags[i].value
+            })
+        }
+
+        console.log(this.timeline);
     }
 
     public setTarget(target:THREE.WebGLRenderTarget)
@@ -224,88 +289,88 @@ export default class VThree
             this.scenes[this.NUM].mouseMove(e);
         }
         catch (e) {
+
             console.log(e); // 例外オブジェクトをエラー処理部分に渡す
         }
     }
 
     public onKeyDown = (e:KeyboardEvent) => {
 
-        console.log(e);
-        // console.log(this.NUM);
-        try {
-            if (e.key == this.key_sceneNext) {
-                this.NUM++;
-                this.checkNum();
-            }
-            if (e.key == this.key_scenePrev) {
-
-                this.NUM--;
-                this.checkNum();
-            }
+        // console.log(e);
+        if(!this.isRelease) {
 
 
-            if (e.key == "ArrowUp") {
-                this.opacity += this.opacityStep;
+            // console.log(this.NUM);
+            try {
+                if (e.key == this.key_sceneNext) {
+                    this.NUM++;
+                    this.checkNum();
+                }
+                if (e.key == this.key_scenePrev) {
 
-                if (this.opacity > 1.0) {
-
-                    this.opacity = 1.0;
+                    this.NUM--;
+                    this.checkNum();
                 }
 
-                this.updateCanvasAlpha();
 
-            }
-            if (e.key == "ArrowDown") {
+                if (e.key == "ArrowUp") {
+                    this.opacity += this.opacityStep;
 
-                this.opacity -= this.opacityStep;
+                    if (this.opacity > 1.0) {
 
-                if (this.opacity < 0.0) {
+                        this.opacity = 1.0;
+                    }
 
-                    this.opacity = 0.0;
+                    this.updateCanvasAlpha();
+
                 }
-                this.updateCanvasAlpha();
-            }
+                if (e.key == "ArrowDown") {
 
-            if (e.key == "d") {
-                //this.debugCounter++;
-            }
+                    this.opacity -= this.opacityStep;
 
-            if (e.code == "Space") {
-                // this.StartStop();
-               if($(".blackScreen").hasClass("start"))
-               {
-                   $(".blackScreen").removeClass("start");
-                   $(".blackScreen").addClass("end");
-               } else
-               {
-                   $(".blackScreen").addClass("start");
-                   $(".blackScreen").removeClass("end");
-               }
+                    if (this.opacity < 0.0) {
 
-            }
-
-
-            if (this.debugCounter >= 5) {
-                this.changeDebug();
-                this.debugCounter = 0;
-            }
-
-            console.log(this.NUM);
-            this.scenes[this.NUM].keyDown(e);
-            for(let i = 0; i < this.controls.length; i++)
-            {
-                if(i == this.NUM)
-                {
-                    this.controls[i].enabled = true;
-                } else
-                {
-                    this.controls[i].enabled = false;
+                        this.opacity = 0.0;
+                    }
+                    this.updateCanvasAlpha();
                 }
-            }
 
-        }
-        catch (e) {
-            console.log(e) // 例外オブジェクトをエラー処理部分に渡す
+                if (e.key == "d") {
+                    //this.debugCounter++;
+                }
+
+                if (e.code == "Space") {
+                    // this.StartStop();
+                    if ($(".blackScreen").hasClass("start")) {
+                        $(".blackScreen").removeClass("start");
+                        $(".blackScreen").addClass("end");
+                    } else {
+                        $(".blackScreen").addClass("start");
+                        $(".blackScreen").removeClass("end");
+                    }
+
+                }
+
+
+                if (this.debugCounter >= 5) {
+                    this.changeDebug();
+                    this.debugCounter = 0;
+                }
+
+                console.log(this.NUM);
+                this.scenes[this.NUM].keyDown(e);
+                for (let i = 0; i < this.controls.length; i++) {
+                    if (i == this.NUM) {
+                        this.controls[i].enabled = true;
+                    } else {
+                        this.controls[i].enabled = false;
+                    }
+                }
+
+            }
+            catch (e) {
+                console.log(e) // 例外オブジェクトをエラー処理部分に渡す
+            }
         }
 
     }
@@ -376,6 +441,23 @@ export default class VThree
     // 最終的な描写処理と、アニメーション関数をワンフレームごとに実行
     public draw(time?) {
 
+        this.frameCount++;
+
+
+        if(this.isTimeLineStart)
+        {
+            console.log("audio" + this.audio.currentTime);
+            let t = this.audio.currentTime;
+            for(let i = 0; i < this.timeline.length; i++)
+            {
+                if(this.timeline[i].start+1 < t && this.timeline[i].end+1 > t)
+                {
+                    this.oscValue = this.timeline[i].value;
+                }
+
+            }
+        }
+
         if(!this.isAllSceneAwaking)
         {
             let count = 0;
@@ -384,6 +466,7 @@ export default class VThree
 
                 p += this.progress[this.scenes[i].name];
                 if (this.progress[this.scenes[i].name] == 100) {
+
                     count++;
                 }
 
@@ -395,7 +478,9 @@ export default class VThree
                     }
                 }
             }
-            $('.bar').css("width",Math.ceil(p/4.0-10)+"%");
+
+            this.progressingbarLength +=((p/4.0-10) - this.progressingbarLength) * 0.05;
+            // $('.bar').css("width",Math.ceil(p/4.0-10)+"%");
 
         }
         if(this.isAllSceneAwaking && this.awakedNum < this.scenes.length) {
@@ -405,22 +490,39 @@ export default class VThree
             if(this.sceneFirtstUpdateDelay < 0)
             {
                 this.nextScene();
+                this.checkNum();
                 this.sceneFirtstUpdateDelay = this.firstupdateDelayNum;
                 this.awakedNum++;
             }
 
-            $('.bar').css("width",90 + 10/4 * this.awakedNum +"%");
+
+            if(Math.floor(90 + 10/4 * this.awakedNum) > 95)
+            {
+                this.progressingbarLength +=(100 - this.progressingbarLength) * 0.05;
+                if(this.progressingbarLength > 99.5)
+                {
+                    this.progressingbarLength = 100;
+
+
+                    if(!this.isMenuFadeIn)
+                    {
+                        $('.progressbar').delay(2000).fadeOut("slow");
+                        $('.menu').stop().delay(2000).fadeIn("slow");
+                        this.isMenuFadeIn = true;
+                    }
+                }
+            } else
+            {
+                this.progressingbarLength +=(Math.floor(90 + 10/4 * this.awakedNum)  - this.progressingbarLength) * 0.05;
+            }
+            // $('.bar').css("width",90 + 10/4 * this.awakedNum +"%");
         }
 
-        if(this.scenes.length == this.awakedNum)
-        {
-
-        }
-
+        $('.bar').css("width", this.progressingbarLength + "%");
 
 
         this.stats.update(time);
-        this.scenes[this.NUM].update(time, this.isUpdate);
+
 
         if (this.rendertarget === null) {
             if (!this.scenes[this.NUM].isPostProcessing) {
@@ -435,17 +537,53 @@ export default class VThree
 
         }
 
-        //
-        console.log("progress");
-        console.log(this.progress);
-
 
         if (this.isUpdate) {
             requestAnimationFrame(this.draw.bind(this));
         }
 
 
-        this.oscValue = [];
+        if(this.oscValue.node == '14')
+        {
+            // $('.blackscreen').css('display', 'block');
+            $('.blackscreen').fadeIn(7000);
+        }
+
+
+        if(this.oscValue.node == '15') {
+
+            for (let i = 0; i < this.scenes.length; i++) {
+
+                this.scenes[i].reset();
+
+            }
+            this.NUM = 0;
+            this.checkNum();
+            $('.blackscreen').fadeOut(1000);
+            $('.menu').stop().delay(0).fadeIn('slow');
+        }
+
+        if(this.oscValue.node == '03')
+        {
+            this.NUM = 2;
+            this.checkNum();
+        }
+
+        if(this.oscValue.node == '05')
+        {
+            this.NUM = 3;
+            this.checkNum();
+        }
+
+        if(this.oscValue.node == '11')
+        {
+            this.NUM = 2;
+            this.checkNum();
+        }
+
+        // if(this.frameCount % 2 ==0){return;}
+        this.scenes[this.NUM].update(time, this.isUpdate);
+        this.oscValue = {node:'none'};
 
 
     }
