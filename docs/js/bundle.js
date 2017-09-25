@@ -57035,12 +57035,12 @@ var Main = /** @class */ (function () {
 var getDevice = (function () {
     var ua = navigator.userAgent;
     if (ua.indexOf('iPhone') > 0 || ua.indexOf('iPod') > 0 || ua.indexOf('Android') > 0 && ua.indexOf('Mobile') > 0) {
-        return 'sp';
+        __WEBPACK_IMPORTED_MODULE_1_jquery__('.progressbar').stop().fadeOut("slow");
+    }
+    else {
+        var main = new Main();
     }
 })();
-window.addEventListener('DOMContentLoaded', function () {
-    var main = new Main();
-});
 
 
 /***/ }),
@@ -57469,7 +57469,7 @@ var VThree = /** @class */ (function () {
         this.rendertarget = null;
         this.screenWidth = 0;
         this.screenHeight = 0;
-        this.maxWidth = 620;
+        this.maxWidth = 1024;
         this.firstupdateDelayNum = 60;
         this.sceneFirtstUpdateDelay = 60;
         this.awakedNum = 0;
