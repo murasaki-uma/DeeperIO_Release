@@ -444,6 +444,7 @@ public frameCount:number = 0;
         this.frameCount++;
 
 
+        console.log(this.progress);
         if(this.isTimeLineStart)
         {
             console.log("audio" + this.audio.currentTime);

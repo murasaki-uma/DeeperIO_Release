@@ -57738,6 +57738,7 @@ var VThree = /** @class */ (function () {
     // 最終的な描写処理と、アニメーション関数をワンフレームごとに実行
     VThree.prototype.draw = function (time) {
         this.frameCount++;
+        console.log(this.progress);
         if (this.isTimeLineStart) {
             console.log("audio" + this.audio.currentTime);
             var t = this.audio.currentTime;
